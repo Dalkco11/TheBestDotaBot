@@ -766,8 +766,16 @@ new (class JungleFarmScript {
 				this.setStatus(`Ожидание крипов (${Math.ceil(this.laneWaitTime.value - (rawTime - this.lastLaneCreepVisibleTime))}сек)`)
 				
 				if (this.randomWalkWaiting.value || (this.chaoticMoveAroundLastCreep.value && this.lastCreepDeathPos)) {
-					let centerPos = this.lastCreepDeathPos ?? hero.Position
+					const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+					const isAtBase = fountain && hero.Distance2D(fountain) < 2500
+
+					let centerPos = this.lastCreepDeathPos
 					
+					// Если мы на базе или нет точки смерти, выбираем позицию на линии принудительно
+					if (!centerPos || isAtBase) {
+						centerPos = this.GetDefaultLanePos(hero)
+					}
+
 					if (this.IsInTowerRange(centerPos, hero)) {
 						centerPos = hero.Position
 					}
@@ -995,7 +1003,7 @@ new (class JungleFarmScript {
 					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < -2000 && h.Position.x > 2000).length
 					if (topAllies < botAllies) return isTop
 					if (botAllies < topAllies) return isBot
-					return true
+					return isTop || isBot // Только верх или низ, НИКОГДА мид
 				}
 				default: return true // Автоматически
 			}
@@ -1061,6 +1069,23 @@ new (class JungleFarmScript {
 			if (this.IsInTowerRange(checkPos, hero, 50)) return true
 		}
 		return false
+	}
+
+	private GetDefaultLanePos(hero: Unit): Vector3 {
+		const isRadiant = hero.Team === Team.Radiant
+		let priority = this.lanePriority.SelectedID
+		
+		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
+			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > 2000 && h.Position.x < -2000).length
+			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < -2000 && h.Position.x > 2000).length
+			priority = topAllies <= botAllies ? 1 : 2
+		}
+
+		if (priority === 1) { // Верх
+			return isRadiant ? new Vector3(-6500, -1000, 256) : new Vector3(-1000, 6500, 256)
+		} else { // Низ
+			return isRadiant ? new Vector3(1000, -6500, 256) : new Vector3(6500, 1000, 256)
+		}
 	}
 
 	private GetSafeMovePos(start: Vector3, end: Vector3, hero: Unit): Vector3 {
