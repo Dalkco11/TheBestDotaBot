@@ -130,6 +130,7 @@ new (class JungleFarmScript {
 	private lastCreepDeathPos: Vector3 | undefined
 	private lastRandomWalkPos: Vector3 | undefined
 	private lastRandomWalkPosUpdateTime = 0
+	private lastSpotArrivalTime = 0
 	private lastCameraLock = false
 	private lastDamageTime = 0
 	private lastLogicTime = 0
@@ -825,6 +826,7 @@ new (class JungleFarmScript {
 				const dist = hero.Distance2D(nearestSpot.pos)
 				if (dist > 300) {
 					this.setStatus(`Путь в лес: ${nearestSpot.name}`)
+					this.lastSpotArrivalTime = 0 // Сбрасываем время прибытия, пока мы в пути
 					const movePos = this.GetSafeMovePos(hero.Position, nearestSpot.pos, hero)
 
 					if (this.moveOnlyBetweenCamps.value) {
@@ -841,10 +843,21 @@ new (class JungleFarmScript {
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				} else {
+					// Мы в радиусе спота. Даем 1 секунду на "прогрузку" крипов
+					if (this.lastSpotArrivalTime === 0) {
+						this.lastSpotArrivalTime = rawTime
+					}
+
+					if (rawTime < this.lastSpotArrivalTime + 1.0) {
+						this.setStatus(`Проверка спота: ${nearestSpot.name}`)
+						return true
+					}
+
 					this.setStatus(`Спот пуст: ${nearestSpot.name}`)
 					this.emptySpots.add(nearestSpot.name)
 					this.currentJungleSpotName = null
 					this.lastOrderTime = 0
+					this.lastSpotArrivalTime = 0
 					return true
 				}
 			} else {
