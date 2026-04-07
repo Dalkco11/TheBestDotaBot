@@ -707,7 +707,8 @@ new (class JungleFarmScript {
 			
 			const waitingOnLane = this.laneFarm.value && 
 			                      targetCreep === undefined && 
-			                      (rawTime - this.lastLaneCreepVisibleTime < this.laneWaitTime.value)
+			                      (rawTime - this.lastLaneCreepVisibleTime < this.laneWaitTime.value) &&
+			                      hero.Level < this.laneOnlyUntilLevel.value
 
 			const nearestSpot = (hero.Level >= this.laneOnlyUntilLevel.value && !waitingOnLane) ? this.GetNearestEnabledSpot(hero) : null
 
