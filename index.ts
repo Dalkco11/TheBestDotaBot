@@ -134,6 +134,7 @@ new (class JungleFarmScript {
 	private lastCameraLock = false
 	private lastDamageTime = 0
 	private lastLogicTime = 0
+	private lastBypassTime = 0
 	private lastHeroAttackerName: string = ""
 	private lastHeroAttackerTime: number = 0
 	private isEscapingTower = false
@@ -273,7 +274,9 @@ new (class JungleFarmScript {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const hero = LocalPlayer?.Hero
 			if (hero && victim instanceof Creep && !victim.IsNeutral && victim.IsEnemy(hero) && hero.Distance2D(victim) < 1200) {
-				this.lastCreepDeathPos = victim.Position
+				if (!this.IsInTowerRange(victim.Position, hero)) {
+					this.lastCreepDeathPos = victim.Position
+				}
 				this.lastLaneCreepVisibleTime = GameState.RawGameTime
 			}
 		}
@@ -693,7 +696,9 @@ new (class JungleFarmScript {
 			const rawTime = GameState.RawGameTime
 
 			const inTowerRange = this.IsInTowerRange(hero.Position, hero)
-			if (this.avoidTowers.value && (inTowerRange || this.isEscapingTower)) {
+			const isBypassing = rawTime < this.lastBypassTime + 10.0
+			
+			if (this.avoidTowers.value && (inTowerRange || this.isEscapingTower) && !isBypassing) {
 				const safetyBuffer = this.isEscapingTower ? 300 : 0
 				if (this.IsInTowerRange(hero.Position, hero, safetyBuffer)) {
 					this.isEscapingTower = true
@@ -863,7 +868,18 @@ new (class JungleFarmScript {
 			} else {
 				if (this.laneFarm.value && this.lastCreepDeathPos) {
 					this.setStatus("Возврат на линию")
-					const movePos = this.GetSafeMovePos(hero.Position, this.lastCreepDeathPos, hero)
+					let target = this.lastCreepDeathPos
+					
+					// Если точка смерти крипа под башней, находим безопасную точку перед ней
+					if (this.IsInTowerRange(target, hero)) {
+						const tower = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(target) < 1000)
+						if (tower) {
+							const dirFromTower = target.Subtract(tower.Position).Normalize()
+							target = tower.Position.Add(dirFromTower.MultiplyScalar(900)) // Граница башни 850 + запас
+						}
+					}
+
+					const movePos = this.GetSafeMovePos(hero.Position, target, hero)
 					if (hero.Distance2D(movePos) > 150) {
 						hero.MoveTo(movePos, false, true)
 						this.lastOrderTime = GameState.RawGameTime
@@ -936,7 +952,7 @@ new (class JungleFarmScript {
 	private GetNearestLaneCreep(hero: Unit): Creep | undefined {
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 		const isAtBase = fountain && hero.Distance2D(fountain) < 2000
-		const maxDist = isAtBase ? 15000 : 3000
+		const maxDist = isAtBase ? 15000 : 5000
 
 		const creeps = this.cachedCreeps.filter(
 			c =>
@@ -1017,11 +1033,18 @@ new (class JungleFarmScript {
 					const escapePos1 = checkPos.Add(escapeDir1.MultiplyScalar(1000))
 					const escapePos2 = checkPos.Add(escapeDir2.MultiplyScalar(1000))
 					
-					if (!this.IsInTowerRange(escapePos1, hero)) return escapePos1
-					if (!this.IsInTowerRange(escapePos2, hero)) return escapePos2
+					if (!this.IsInTowerRange(escapePos1, hero)) {
+						this.lastBypassTime = GameState.RawGameTime
+						return escapePos1
+					}
+					if (!this.IsInTowerRange(escapePos2, hero)) {
+						this.lastBypassTime = GameState.RawGameTime
+						return escapePos2
+					}
 				}
 				
 				// Если обход не найден, возвращаемся назад от башни
+				this.lastBypassTime = GameState.RawGameTime
 				return start.Subtract(dir.MultiplyScalar(300))
 			}
 		}
