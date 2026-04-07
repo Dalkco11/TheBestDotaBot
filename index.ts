@@ -112,6 +112,8 @@ new (class JungleFarmScript {
 	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
 	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
 	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", false, "Показывать уведомление при получении урона от вражеского героя")
+	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", false, "Писать в чат просьбу не бить при получении урона от героя")
+	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 1, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
@@ -136,6 +138,7 @@ new (class JungleFarmScript {
 	private lastDamageTime = 0
 	private lastLogicTime = 0
 	private lastBypassTime = 0
+	private lastHeroChatTime = 0
 	private lastHeroAttackerName: string = ""
 	private lastHeroAttackerTime: number = 0
 	private isEscapingTower = false
@@ -265,8 +268,19 @@ new (class JungleFarmScript {
 				}
 
 				if (attacker.IsHero) {
-					this.lastHeroAttackerName = attacker.Name.replace("npc_dota_hero_", "").replace(/_/g, " ").toUpperCase()
+					const name = attacker.Name.replace("npc_dota_hero_", "").replace(/_/g, " ").toUpperCase()
+					this.lastHeroAttackerName = name
 					this.lastHeroAttackerTime = GameState.RawGameTime
+
+					// Отправка в чат при уроне
+					if (this.chatOnHeroDamage.value && 
+					    hero.Level >= this.chatOnHeroDamageLevel.value && 
+					    GameState.RawGameTime > this.lastHeroChatTime + 10.0) { // Задержка 10 сек между сообщениями
+						
+						const displayName = name.charAt(0) + name.slice(1).toLowerCase()
+						RendererSDK.ExecuteCommand(`say "Mr ${displayName} не бей меня пожалуйста"`)
+						this.lastHeroChatTime = GameState.RawGameTime
+					}
 				}
 			}
 		}
