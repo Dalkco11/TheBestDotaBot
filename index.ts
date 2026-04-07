@@ -114,6 +114,8 @@ new (class JungleFarmScript {
 	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", false, "Показывать уведомление при получении урона от вражеского героя")
 	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", false, "Писать в чат просьбу не бить при получении урона от героя")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 1, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
+	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
+	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 2, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
@@ -340,6 +342,12 @@ new (class JungleFarmScript {
 			const heroKey = `${hero.Name}_${hero.Index}`
 			if (hero.Team !== Team.None && !this.heroSettings.has(heroKey)) {
 				this.heroSettings.set(heroKey, {})
+			}
+
+			// Auto-enable logic
+			if (!this.state.value && this.autoEnable.value && GameState.RawGameTime >= this.autoEnableTime.value * 60) {
+				this.state.value = true
+				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин)`)
 			}
 
 			if (!this.state.value) return
