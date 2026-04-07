@@ -53,6 +53,7 @@ new (class JungleFarmScript {
 	private readonly laneFarm = this.laneNode.AddToggle("Фарм линии", true, "Разрешить герою фармить крипов на линии")
 	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
 	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 1, "Сколько секунд ждать новую пачку на линии")
+	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников"], 0, "Какую линию фармить в первую очередь (до уровня леса)")
 	private readonly randomWalkWaiting = this.laneNode.AddToggle("Случайная ходьба", true, "Активное движение в безопасной зоне при ожидании")
 	private readonly chaoticMoveAroundLastCreep = this.laneNode.AddToggle("Мансы у места смерти", true, "Движение вокруг позиции последнего убитого крипа")
 	private readonly laneTowerSafety = this.laneNode.AddToggle("Доп. радиус от башен", true, "Увеличивает безопасную дистанцию до башен на стадии линии")
@@ -274,7 +275,7 @@ new (class JungleFarmScript {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const hero = LocalPlayer?.Hero
 			if (hero && victim instanceof Creep && !victim.IsNeutral && victim.IsEnemy(hero) && hero.Distance2D(victim) < 1200) {
-				if (!this.IsInTowerRange(victim.Position, hero)) {
+				if (!this.IsInTowerRange(victim.Position, hero) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
 					this.lastCreepDeathPos = victim.Position
 				}
 				this.lastLaneCreepVisibleTime = GameState.RawGameTime
@@ -478,9 +479,10 @@ new (class JungleFarmScript {
 
 			if (this.fleeFromCreepsUnderTower.value && rawTime < this.lastDamageTime + 3.0) {
 				const target = hero.Target
-				if (!target || !target.IsAlive || this.IsInTowerRange(target.Position, hero)) {
-					this.setStatus("Отход (Урон под башней)")
-					this.GoToFountain(hero)
+				const isSafeToHit = target instanceof Creep && target.HP < hero.AttackDamageMax * 2 // Можем убить за 1-2 удара
+				
+				if (!target || !target.IsAlive || (this.IsInTowerRange(target.Position, hero) && !isSafeToHit)) {
+					this.Flee(hero, "Отход (Урон под башней)")
 					return
 				}
 			}
@@ -496,8 +498,8 @@ new (class JungleFarmScript {
 					return
 				}
 
-				this.AutoItems(hero)
 				this.AutoAbilities(hero)
+				this.AutoItems(hero)
 				this.HandlePanorama(hero)
 			}
 		} catch (e) {
@@ -691,6 +693,30 @@ new (class JungleFarmScript {
 		}
 	}
 
+	private Flee(hero: Unit, status: string): void {
+		this.setStatus(status)
+		const alliedTowers = this.cachedTowers.filter(t => t.IsAlive && !t.IsEnemy(hero))
+		const nearestAllyTower = alliedTowers.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
+		
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		const basePos = fountain?.Position ?? hero.Position
+
+		// Приоритет - ближайшая союзная башня, если она не слишком далеко (на линии)
+		// Если союзных башен нет или они далеко - отходим в сторону базы
+		const fleeTarget = (nearestAllyTower && hero.Distance2D(nearestAllyTower) < 4000) 
+			? nearestAllyTower.Position 
+			: basePos
+
+		const dir = fleeTarget.Subtract(hero.Position).Normalize()
+		// Отходим на 600 единиц (достаточно чтобы выйти из-под агра, но не убежать в лес)
+		const movePos = hero.Position.Add(dir.MultiplyScalar(600))
+		
+		// Используем GetSafeMovePos только если мы НЕ под башней, чтобы не было кругов
+		// Если мы УЖЕ под башней, просто бежим по прямой от неё в безопасную сторону
+		hero.MoveTo(movePos, false, true)
+		this.lastOrderTime = GameState.RawGameTime
+	}
+
 	private Farm(hero: Unit): boolean {
 		try {
 			const rawTime = GameState.RawGameTime
@@ -702,8 +728,7 @@ new (class JungleFarmScript {
 				const safetyBuffer = this.isEscapingTower ? 300 : 0
 				if (this.IsInTowerRange(hero.Position, hero, safetyBuffer)) {
 					this.isEscapingTower = true
-					this.setStatus("Побег от башни")
-					this.GoToFountain(hero)
+					this.Flee(hero, "Побег от башни")
 					return true
 				}
 				this.isEscapingTower = false
@@ -853,7 +878,7 @@ new (class JungleFarmScript {
 						this.lastSpotArrivalTime = rawTime
 					}
 
-					if (rawTime < this.lastSpotArrivalTime + 1.0) {
+					if (rawTime < this.lastSpotArrivalTime + 0.25) {
 						this.setStatus(`Проверка спота: ${nearestSpot.name}`)
 						return true
 					}
@@ -954,6 +979,28 @@ new (class JungleFarmScript {
 		const isAtBase = fountain && hero.Distance2D(fountain) < 2000
 		const maxDist = isAtBase ? 15000 : 5000
 
+		// Доп. логика выбора линии
+		const filterByLane = (c: Creep) => {
+			if (hero.Level >= this.laneOnlyUntilLevel.value) return true // После нужного уровня фармим всё
+
+			const pos = c.Position
+			const isTop = pos.y > 2000 && pos.x < -2000
+			const isBot = pos.y < -2000 && pos.x > 2000
+			
+			switch (this.lanePriority.SelectedID) {
+				case 1: return isTop // Только верх
+				case 2: return isBot // Только низ
+				case 3: { // Меньше союзников
+					const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > 2000 && h.Position.x < -2000).length
+					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < -2000 && h.Position.x > 2000).length
+					if (topAllies < botAllies) return isTop
+					if (botAllies < topAllies) return isBot
+					return true
+				}
+				default: return true // Автоматически
+			}
+		}
+
 		const creeps = this.cachedCreeps.filter(
 			c =>
 				c.IsEnemy(hero) &&
@@ -962,6 +1009,7 @@ new (class JungleFarmScript {
 				c.IsVisible &&
 				hero.Distance2D(c) < maxDist && // Игнорируем крипов на других линиях, если мы уже на линии
 				(!this.ignoreMid.value || !this.IsMidLane(c.Position)) &&
+				filterByLane(c) &&
 				!this.IsIgnoredUnit(c)
 		)
 
