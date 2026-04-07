@@ -743,8 +743,8 @@ new (class JungleFarmScript {
 					const distToCenter = hero.Distance2D(centerPos)
 
 					if (distToCenter > 800) {
-						if (!this.IsInTowerRange(centerPos, hero)) {
-							const movePos = this.GetSafeMovePos(hero.Position, centerPos, hero)
+						const movePos = this.GetSafeMovePos(hero.Position, centerPos, hero)
+						if (movePos.Distance2D(hero.Position) > 100) {
 							hero.MoveTo(movePos, false, true)
 							this.lastOrderTime = rawTime
 							return true
@@ -847,6 +847,15 @@ new (class JungleFarmScript {
 					return true
 				}
 			} else {
+				if (this.laneFarm.value && this.lastCreepDeathPos) {
+					this.setStatus("Возврат на линию")
+					const movePos = this.GetSafeMovePos(hero.Position, this.lastCreepDeathPos, hero)
+					if (hero.Distance2D(movePos) > 150) {
+						hero.MoveTo(movePos, false, true)
+						this.lastOrderTime = GameState.RawGameTime
+						return true
+					}
+				}
 				this.setStatus("Нет доступных целей")
 				this.targetPos = undefined
 				return false
@@ -911,13 +920,17 @@ new (class JungleFarmScript {
 	}
 
 	private GetNearestLaneCreep(hero: Unit): Creep | undefined {
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		const isAtBase = fountain && hero.Distance2D(fountain) < 2000
+		const maxDist = isAtBase ? 15000 : 3000
+
 		const creeps = this.cachedCreeps.filter(
 			c =>
 				c.IsEnemy(hero) &&
 				!c.IsNeutral &&
 				c.IsAlive &&
 				c.IsVisible &&
-				hero.Distance2D(c) < 3000 && // Игнорируем крипов на других линиях
+				hero.Distance2D(c) < maxDist && // Игнорируем крипов на других линиях, если мы уже на линии
 				(!this.ignoreMid.value || !this.IsMidLane(c.Position)) &&
 				!this.IsIgnoredUnit(c)
 		)
