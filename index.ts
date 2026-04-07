@@ -278,7 +278,7 @@ new (class JungleFarmScript {
 					    GameState.RawGameTime > this.lastHeroChatTime + 10.0) { // Задержка 10 сек между сообщениями
 						
 						const displayName = name.charAt(0) + name.slice(1).toLowerCase()
-						RendererSDK.ExecuteCommand(`say "Mr ${displayName} не бей меня пожалуйста"`)
+						this.SafeExecuteCommand(`say "Mr ${displayName} не бей меня пожалуйста"`)
 						this.lastHeroChatTime = GameState.RawGameTime
 					}
 				}
