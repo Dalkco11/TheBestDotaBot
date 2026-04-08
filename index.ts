@@ -106,6 +106,13 @@ new (class JungleFarmScript {
 	private readonly drawRoute = this.visualNode.AddToggle("Рисовать маршрут", true)
 	private readonly lockCamera = this.visualNode.AddToggle("Центрировать камеру", false)
 
+	private readonly testNode = this.entry.AddNode("Тест (Экспериментально)", "", "Функции для тестирования APM и скорости")
+	private readonly fastLogic = this.testNode.AddToggle("Быстрая логика", false, "Снижает задержку раздумий до 20мс (вместо 100мс)")
+	private readonly fastOrders = this.testNode.AddToggle("Быстрые приказы", false, "Снижает задержку между командами до 0.05с (вместо 0.3с)")
+	private readonly spamClick = this.testNode.AddToggle("Спам кликов", false, "Повторно отправлять команду атаки/движения, даже если цель не изменилась")
+	private readonly jitterMove = this.testNode.AddToggle("Джиттер-движение", false, "Микро-клики вокруг точки назначения (симуляция нервного игрока)")
+	private readonly experimentalOrbWalk = this.testNode.AddToggle("Orb-Walking", false, "Экспериментальная отмена анимации после выстрела/удара")
+
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
 	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
@@ -118,6 +125,9 @@ new (class JungleFarmScript {
 	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", true, "Писать в чат просьбу не бить при получении урона от героя")
 	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
+	private readonly setSmallCampsLvl = this.debugNode.AddButton("Авто: Маленькие кемпы (1 лвл)", "Установить уровень 1 для всех маленьких лагерей")
+	private readonly setMediumCampsLvl = this.debugNode.AddButton("Авто: Средние кемпы (4 лвл)", "Установить уровень 4 для всех средних лагерей")
+	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
@@ -211,6 +221,36 @@ new (class JungleFarmScript {
 
 		this.toggleKey.OnPressed(() => {
 			this.state.value = !this.state.value
+		})
+
+		this.setSmallCampsLvl.OnValue(() => {
+			for (const spot of jungleSpots) {
+				if (spot.name.includes("malenkiy")) {
+					const slider = this.spotLevelSliders.get(spot.name)
+					if (slider) slider.value = 1
+				}
+			}
+			this.Log("Установлен 1 лвл для всех маленьких кемпов")
+		})
+
+		this.setMediumCampsLvl.OnValue(() => {
+			for (const spot of jungleSpots) {
+				if (spot.name.includes("sredniy")) {
+					const slider = this.spotLevelSliders.get(spot.name)
+					if (slider) slider.value = 4
+				}
+			}
+			this.Log("Установлен 4 лвл для всех средних кемпов")
+		})
+
+		this.setLargeCampsLvl.OnValue(() => {
+			for (const spot of jungleSpots) {
+				if (!spot.name.includes("malenkiy") && !spot.name.includes("sredniy")) {
+					const slider = this.spotLevelSliders.get(spot.name)
+					if (slider) slider.value = 5
+				}
+			}
+			this.Log("Установлен 5 лвл для всех больших и остальных кемпов")
 		})
 
 		this.testSayButton.OnValue(() => {
@@ -366,8 +406,9 @@ new (class JungleFarmScript {
 				return
 			}
 
-			// Run logic on Draw frame but throttle it (every 100ms)
-			if (GameState.RawGameTime > this.lastLogicTime + 0.1) {
+			// Run logic on Draw frame but throttle it
+			const throttle = this.fastLogic.value ? 0.02 : 0.1
+			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
 				this.OnUpdate(hero)
 				this.lastLogicTime = GameState.RawGameTime
 			}
@@ -469,7 +510,8 @@ new (class JungleFarmScript {
 				}
 			}
 
-			if (rawTime < this.lastOrderTime + 0.3) return
+			const delay = this.fastOrders.value ? 0.05 : 0.3
+			if (rawTime < this.lastOrderTime + delay) return
 
 			const nearbyCreep = this.cachedCreeps.find(c => 
 				!c.IsNeutral && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 2000 && !this.IsInTowerRange(c.Position, hero)
@@ -519,8 +561,13 @@ new (class JungleFarmScript {
 			}
 
 			if (this.isReturningAfterHeal && this.lastPosBeforeHeal) {
+				const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value
 				const dist = hero.Distance2D(this.lastPosBeforeHeal)
-				if (dist < 300) {
+				
+				if (canFarmJungle) {
+					this.isReturningAfterHeal = false
+					this.Log(`Возврат отменен: уровень ${hero.Level} позволяет фармить лес`)
+				} else if (dist < 300) {
 					this.isReturningAfterHeal = false
 					this.Log("Вернулся на исходную позицию")
 				}
@@ -810,12 +857,27 @@ new (class JungleFarmScript {
 				if (!isCreepInEnemyTowerRange) {
 					this.setStatus("Фарм линии")
 					this.targetPos = targetCreep.Position
-					if (hero.TargetIndex_ !== targetCreep.Index || (!hero.IsAttacking && GameState.RawGameTime > this.lastOrderTime + 1.0)) {
-						const movePos = this.GetSafeMovePos(hero.Position, targetCreep.Position, hero)
+
+					const isAttackingSame = hero.TargetIndex_ === targetCreep.Index
+					const canOrbWalk = this.experimentalOrbWalk.value && hero.AttackAnimationPoint > 0 && (GameState.RawGameTime > hero.LastAttackTime + hero.AttackAnimationPoint)
+					
+					if (!isAttackingSame || this.spamClick.value || canOrbWalk) {
+						let targetPos = targetCreep.Position
+						if (this.jitterMove.value) {
+							const angle = Math.random() * Math.PI * 2
+							targetPos = targetPos.Add(new Vector3(Math.cos(angle) * 50, Math.sin(angle) * 50, 0))
+						}
+
+						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero)
 						if (movePos.Distance2D(targetCreep.Position) > 100) {
 							hero.MoveTo(movePos, false, true)
 						} else {
-							hero.AttackTarget(targetCreep, false, true)
+							if (canOrbWalk && hero.IsAttacking) {
+								const stepBack = hero.Position.Subtract(targetCreep.Position).Normalize().MultiplyScalar(100)
+								hero.MoveTo(hero.Position.Add(stepBack), false, true)
+							} else {
+								hero.AttackTarget(targetCreep, false, true)
+							}
 						}
 						this.lastOrderTime = GameState.RawGameTime
 						return true
@@ -907,7 +969,9 @@ new (class JungleFarmScript {
 				if (neutral) {
 					this.setStatus("Фарм леса")
 					this.targetPos = neutral.Position
-					if (hero.TargetIndex_ !== neutral.Index || (!hero.IsAttacking && GameState.RawGameTime > this.lastOrderTime + 1.0)) {
+
+					const isAttackingSame = hero.TargetIndex_ === neutral.Index
+					if (!isAttackingSame || this.spamClick.value) {
 						const movePos = this.GetSafeMovePos(hero.Position, neutral.Position, hero)
 						if (movePos.Distance2D(neutral.Position) > 100) {
 							hero.MoveTo(movePos, false, true)
@@ -1015,8 +1079,13 @@ new (class JungleFarmScript {
 		const isFarmed = (spot: JungleSpot) => {
 			for (const h of this.cachedHeroes) {
 				if (h.Distance2D(spot.pos) < 600) {
-					if (this.skipIfAllyFarming.value && !h.IsEnemy(hero)) return true
-					if (this.skipIfEnemyFarming.value && h.IsEnemy(hero)) return true
+					const isAttackingCreep = h.IsAttacking && h.Target instanceof Creep
+					const hasFarmBuff = h.Buffs.some(b => /mask_of_madness|hand_of_midas|battle_fury/.test(b.Name))
+					
+					if (isAttackingCreep || hasFarmBuff) {
+						if (this.skipIfAllyFarming.value && !h.IsEnemy(hero)) return true
+						if (this.skipIfEnemyFarming.value && h.IsEnemy(hero)) return true
+					}
 				}
 			}
 			return false
