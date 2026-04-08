@@ -1070,43 +1070,6 @@ new (class JungleFarmScript {
 			this.Log(`Поиск (HeroTeam:${hero.Team} Base:${isAtBase} Return:${this.isReturningAfterHeal})`)
 		}
 
-		// Доп. логика выбора линии
-		const filterByLane = (c: Creep) => {
-			const pos = c.Position
-			const isMid = this.IsMidLane(pos)
-			
-			// На базе (или при выходе) разрешаем любых крипов, чтобы не тупил
-			if (isAtBase || this.isReturningAfterHeal) {
-				if (isMid) return !this.ignoreMid.value
-				return true
-			}
-
-			if (hero.Level >= this.laneOnlyUntilLevel.value) return true // После нужного уровня фармим всё
-			
-			const isTop = pos.y > pos.x // Верхняя половина карты (Top lane)
-			const isBot = pos.y < pos.x // Нижняя половина карты (Bot lane)
-			
-			let result = true
-			switch (this.lanePriority.SelectedID) {
-				case 1: result = isTop; break // Только верх
-				case 2: result = isBot; break // Только низ
-				case 3: { // Меньше союзников
-					const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
-					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
-					if (topAllies < botAllies) result = isTop
-					else if (botAllies < topAllies) result = isBot
-					else result = isTop || isBot // Только верх или низ, НИКОГДА мид
-					break
-				}
-				default: result = true; break // Автоматически
-			}
-
-			if (this.detailedDebug.value && !result && hero.Distance2D(pos) < 2000) {
-				this.Log(`Крип на неверной линии: Top:${isTop} Bot:${isBot} Priority:${this.lanePriority.SelectedID}`)
-			}
-			return result
-		}
-
 		const creeps = this.cachedCreeps.filter(
 			c => {
 				const isEnemy = c.IsEnemy(hero)
@@ -1116,14 +1079,12 @@ new (class JungleFarmScript {
 				const dist = hero.Distance2D(c)
 				const distValid = dist < maxDist
 				const midValid = !this.ignoreMid.value || !this.IsMidLane(c.Position)
-				const laneValid = filterByLane(c)
 				const notIgnored = !this.IsIgnoredUnit(c)
 
-				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && distValid && midValid && laneValid && notIgnored
+				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && distValid && midValid && notIgnored
 
 				if (this.detailedDebug.value && !allValid && dist < 3000) {
-					// Логируем только если крип рядом, чтобы не спамить
-					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} D:${distValid} M:${midValid} L:${laneValid} I:${notIgnored}`)
+					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} D:${distValid} M:${midValid} I:${notIgnored}`)
 				}
 
 				return allValid
