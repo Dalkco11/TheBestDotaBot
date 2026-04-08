@@ -44,6 +44,16 @@ const jungleSpots: JungleSpot[] = [
 	{ name: "radtopsredniycampexp", pos: new Vector3(-8000, -605, 256), team: Team.Radiant }
 ]
 
+interface HeroLevelingSettings {
+	node: Menu.Node
+	autoLevel: Menu.Toggle
+	prioritizeUlt: Menu.Toggle
+	p1: Menu.Dropdown
+	p2: Menu.Dropdown
+	p3: Menu.Dropdown
+	p4: Menu.Dropdown
+}
+
 new (class JungleFarmScript {
 	private readonly entry = Menu.AddEntry("Фарм Леса/Линии")
 	private readonly state = this.entry.AddToggle("Включить скрипт", false, "Общий переключатель работы скрипта")
@@ -51,7 +61,7 @@ new (class JungleFarmScript {
 
 	private readonly laneNode = this.entry.AddNode("Настройки Линии", "", "Все, что касается фарма крипов на линии")
 	private readonly laneFarm = this.laneNode.AddToggle("Фарм линии", true, "Разрешить герою фармить крипов на линии")
-	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 5, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
+	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
 	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 1, "Сколько секунд ждать новую пачку на линии")
 	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников"], 3, "Какую линию фармить в первую очередь (до уровня леса)")
 	private readonly randomWalkWaiting = this.laneNode.AddToggle("Случайная ходьба", true, "Активное движение в безопасной зоне при ожидании")
@@ -101,6 +111,9 @@ new (class JungleFarmScript {
 	private readonly enabledSpells: Map<string, Menu.Toggle> = new Map()
 	private readonly spellsWhitelistNode = this.abilitiesNode.AddNode("Белый список")
 
+	private readonly autoLevelingNode = this.autoNode.AddNode("Авто-прокачка", "", "Настройки автоматической прокачки способностей")
+	private readonly autoLeveling = this.autoLevelingNode.AddToggle("Включить авто-прокачку", true)
+
 	private readonly visualNode = this.entry.AddNode("Визуализация", "", "Отрисовка маршрутов и статусов")
 	private readonly drawSpots = this.visualNode.AddToggle("Рисовать споты", true)
 	private readonly drawRoute = this.visualNode.AddToggle("Рисовать маршрут", true)
@@ -131,10 +144,12 @@ new (class JungleFarmScript {
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
+	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
+
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
 	private readonly spotLevelSliders: Map<string, Menu.Slider> = new Map()
 	private readonly emptySpots: Set<string> = new Set()
-	private readonly heroSettings: Map<string, {}> = new Map()
+	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
 	private readonly visibleSymbol = typeof Panorama !== 'undefined' ? Panorama.MakeSymbol("Visible") : null
 	private lastMinute = -1
@@ -158,6 +173,8 @@ new (class JungleFarmScript {
 	private lastHeroChatTime = 0
 	private lastHeroAttackerName: string = ""
 	private lastHeroAttackerTime: number = 0
+	private lastLeveledAbilityPoints: number = 0
+	private readonly failedAbilities: Set<string> = new Set()
 	private isEscapingTower = false
 	private lastTpTime = 0
 	private readonly logBuffer: string[] = []
@@ -213,11 +230,92 @@ new (class JungleFarmScript {
 		}
 	}
 
+	private HandleAutoLeveling(hero: Unit): void {
+		if (hero.AbilityPoints <= 0) {
+			this.failedAbilities.clear()
+			this.lastLeveledAbilityPoints = 0
+			return
+		}
+
+		const settings = this.heroSettings.get(`${hero.Name}_${hero.Index}`)
+		if (!settings || !settings.autoLevel.value) return
+
+		// Если количество очков уменьшилось, значит прошлая попытка была успешной - сбрасываем список провалов
+		if (hero.AbilityPoints < this.lastLeveledAbilityPoints) {
+			this.failedAbilities.clear()
+		}
+		this.lastLeveledAbilityPoints = hero.AbilityPoints
+
+		const spells = hero.Spells.filter(s => s !== undefined && s !== null) as Ability[]
+		const allTalents = spells.filter(s => s.Name.startsWith("special_bonus_"))
+
+		// Собираем всех кандидатов в порядке приоритета
+		const candidates: Ability[] = []
+
+		// 1. Ульта (если галочка включена)
+		if (settings.prioritizeUlt.value) {
+			const ultimates = spells.filter(s => s.IsUltimate && s.Level < s.MaxLevel && hero.Level >= s.RequiredLevel)
+			candidates.push(...ultimates)
+		}
+
+		// 2. Выбранные скиллы по порядку
+		const priorityList = [settings.p1.SelectedID, settings.p2.SelectedID, settings.p3.SelectedID, settings.p4.SelectedID]
+		for (const id of priorityList) {
+			let target: Ability | undefined
+			if (id === 3) { // R
+				target = spells.find(s => s.IsUltimate)
+			} else { // Q, W, E (0, 1, 2)
+				target = hero.Spells[id] ?? undefined
+			}
+			
+			if (target && target.Level < target.MaxLevel && hero.Level >= target.RequiredLevel && !target.IsNotLearnable) {
+				candidates.push(target)
+			}
+		}
+
+		// 3. Таланты
+		const availableTalents = allTalents.filter(s => {
+			if (s.Level >= s.MaxLevel || hero.Level < s.RequiredLevel || s.IsNotLearnable) return false
+			// Игнорируем талант, если в этом тире (уровне) уже что-то вкачано
+			return !allTalents.some(other => other.RequiredLevel === s.RequiredLevel && other.Level > 0)
+		})
+		candidates.push(...availableTalents)
+
+		// 4. Обычные способности (если еще остались)
+		const regulars = spells.filter(s => 
+			!s.IsUltimate && 
+			!s.Name.startsWith("special_bonus_") && 
+			!s.IsNotLearnable && 
+			!s.IsAttributes &&
+			s.Level < s.MaxLevel && 
+			hero.Level >= s.RequiredLevel
+		)
+		candidates.push(...regulars)
+
+		// Ищем первого кандидата, который еще не провалился в текущей сессии прокачки
+		const bestCandidate = candidates.find(c => !this.failedAbilities.has(c.Name))
+
+		if (bestCandidate) {
+			bestCandidate.UpgradeAbility()
+			this.Log(`Авто-прокачка: ${bestCandidate.Name}`)
+			// Добавляем в список "подозрительных". Если очки не уменьшатся - в следующем тике попробуем другого.
+			this.failedAbilities.add(bestCandidate.Name)
+		}
+	}
+
 	constructor() {
 		for (const spot of jungleSpots) {
 			const node = this.spotsNode.AddNode(spot.name)
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
-			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", 1, 1, 30, 1))
+			
+			let defaultLvl = 5
+			if (spot.name.includes("malenkiy")) {
+				defaultLvl = 1
+			} else if (spot.name.includes("sredniy")) {
+				defaultLvl = 4
+			}
+			
+			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", defaultLvl, 1, 30, 1))
 		}
 
 		this.toggleKey.OnPressed(() => {
@@ -388,7 +486,17 @@ new (class JungleFarmScript {
 			// Force initialize leveling menu even if script is disabled
 			const heroKey = `${hero.Name}_${hero.Index}`
 			if (hero.Team !== Team.None && !this.heroSettings.has(heroKey)) {
-				this.heroSettings.set(heroKey, {})
+				const heroNode = this.autoLevelingNode.AddNode(hero.Name, "", "Настройки прокачки для этого героя")
+				const settings: HeroLevelingSettings = {
+					node: heroNode,
+					autoLevel: heroNode.AddToggle("Авто-прокачка", true),
+					prioritizeUlt: heroNode.AddToggle("Всегда первым качать ульту", true),
+					p1: heroNode.AddDropdown("Приоритет 1", ["Q", "W", "E", "R"], 0),
+					p2: heroNode.AddDropdown("Приоритет 2", ["Q", "W", "E", "R"], 1),
+					p3: heroNode.AddDropdown("Приоритет 3", ["Q", "W", "E", "R"], 2),
+					p4: heroNode.AddDropdown("Приоритет 4", ["Q", "W", "E", "R"], 3)
+				}
+				this.heroSettings.set(heroKey, settings)
 			}
 
 			// Auto-enable logic
@@ -410,6 +518,10 @@ new (class JungleFarmScript {
 			// Run logic on Draw frame but throttle it
 			const throttle = this.fastLogic.value ? 0.06 : 0.1
 			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
+				if (this.autoLeveling.value) {
+					this.HandleAutoLeveling(hero)
+				}
+
 				const abilitySent = this.AutoAbilities(hero)
 				const itemSent = this.AutoItems(hero)
 				
