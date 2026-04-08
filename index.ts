@@ -296,7 +296,7 @@ new (class JungleFarmScript {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const hero = LocalPlayer?.Hero
 			if (hero && victim instanceof Creep && !victim.IsNeutral && victim.IsEnemy(hero) && hero.Distance2D(victim) < 1200) {
-				if (!this.IsInTowerRange(victim.Position, hero) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
+				if ((!this.IsInTowerRange(victim.Position, hero) || !this.IsInAnyTowerRange(victim.Position, hero)) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
 					this.lastCreepDeathPos = victim.Position
 				}
 				this.lastLaneCreepVisibleTime = GameState.RawGameTime
@@ -780,16 +780,20 @@ new (class JungleFarmScript {
 
 			const targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
 			
+			const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+			const isAtBase = fountain && hero.Distance2D(fountain) < 2500
+
 			const waitingOnLane = this.laneFarm.value && 
 			                      targetCreep === undefined && 
 			                      (rawTime - this.lastLaneCreepVisibleTime < this.laneWaitTime.value) &&
-			                      hero.Level < this.laneOnlyUntilLevel.value
+			                      hero.Level < this.laneOnlyUntilLevel.value &&
+			                      !isAtBase
 
 			const nearestSpot = (hero.Level >= this.laneOnlyUntilLevel.value && !waitingOnLane) ? this.GetNearestEnabledSpot(hero) : null
 
 			if (targetCreep && (!nearestSpot || hero.Distance2D(targetCreep) < hero.Distance2D(nearestSpot.pos))) {
-				const isCreepInTowerRange = this.IsInTowerRange(targetCreep.Position, hero)
-				if (!isCreepInTowerRange) {
+				const isCreepInEnemyTowerRange = this.IsInTowerRange(targetCreep.Position, hero)
+				if (!isCreepInEnemyTowerRange) {
 					this.setStatus("Фарм линии")
 					this.targetPos = targetCreep.Position
 					if (hero.TargetIndex_ !== targetCreep.Index || (!hero.IsAttacking && GameState.RawGameTime > this.lastOrderTime + 1.0)) {
@@ -810,13 +814,10 @@ new (class JungleFarmScript {
 				this.setStatus(`Ожидание крипов (${Math.ceil(this.laneWaitTime.value - (rawTime - this.lastLaneCreepVisibleTime))}сек)`)
 				
 				if (this.randomWalkWaiting.value || (this.chaoticMoveAroundLastCreep.value && this.lastCreepDeathPos)) {
-					const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-					const isAtBase = fountain && hero.Distance2D(fountain) < 2500
-
 					let centerPos = this.lastCreepDeathPos
 					
-					// Если мы на базе или нет точки смерти, выбираем позицию на линии принудительно
-					if (!centerPos || isAtBase) {
+					// Если нет точки смерти, выбираем позицию на линии принудительно
+					if (!centerPos) {
 						centerPos = this.GetDefaultLanePos(hero)
 					}
 
@@ -957,7 +958,7 @@ new (class JungleFarmScript {
 					this.setStatus("Возврат на линию")
 					let target = this.lastCreepDeathPos
 					
-					// Если точка смерти крипа под башней, находим безопасную точку перед ней
+					// Если точка смерти крипа под ВРАЖЕСКОЙ башней, находим безопасную точку перед ней
 					if (this.IsInTowerRange(target, hero)) {
 						const tower = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(target) < 1000)
 						if (tower) {
@@ -1114,6 +1115,11 @@ new (class JungleFarmScript {
 		}
 		
 		return false
+	}
+
+	private IsInAnyTowerRange(pos: Vector3, hero: Unit): boolean {
+		const tower = this.cachedTowers.find(t => t.IsAlive && t.Distance2D(pos) < 700 + 150)
+		return tower !== undefined
 	}
 
 	private IsPathBlockedByTower(start: Vector3, end: Vector3, hero: Unit): boolean {
