@@ -116,6 +116,7 @@ new (class JungleFarmScript {
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 1, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
 	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 2, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
+	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
@@ -129,6 +130,8 @@ new (class JungleFarmScript {
 	private lastOrderTime = 0
 	private lastOrderWasAttack = false
 	private isGoingToFountain = false
+	private isReturningAfterHeal = false
+	private lastPosBeforeHeal: Vector3 | undefined
 	private currentStatus = "Ожидание (Сброс)"
 	private targetPos: Vector3 | undefined
 	private currentJungleSpotName: string | null = null
@@ -246,6 +249,8 @@ new (class JungleFarmScript {
 		this.isEscapingTower = false
 		this.lastOrderWasAttack = false
 		this.isGoingToFountain = false
+		this.isReturningAfterHeal = false
+		this.lastPosBeforeHeal = undefined
 		this.setStatus("Ожидание (Сброс)")
 		this.targetPos = undefined
 		this.lastCreepDeathPos = undefined
@@ -474,7 +479,12 @@ new (class JungleFarmScript {
 
 			const hpPercent = hero.HPPercentDecimal * 100
 			if (hpPercent < this.hpThreshold.value) {
+				if (!this.isGoingToFountain) {
+					this.lastPosBeforeHeal = hero.Position
+					this.Log(`HP ниже порога (${hpPercent.toFixed(1)}%), запоминаю позицию: ${this.lastPosBeforeHeal.toString()}`)
+				}
 				this.isGoingToFountain = true
+				this.isReturningAfterHeal = false
 				
 				if (this.autoTpLowHp.value && rawTime > this.lastTpTime + 10) {
 					const tp = hero.GetItemByName("item_tpscroll")
@@ -490,6 +500,10 @@ new (class JungleFarmScript {
 					}
 				}
 			} else if (hpPercent > 95) {
+				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal) {
+					this.isReturningAfterHeal = true
+					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${this.lastPosBeforeHeal.toString()}`)
+				}
 				this.isGoingToFountain = false
 			}
 
@@ -497,6 +511,14 @@ new (class JungleFarmScript {
 				this.setStatus("Возврат на базу")
 				this.GoToFountain(hero)
 				return
+			}
+
+			if (this.isReturningAfterHeal && this.lastPosBeforeHeal) {
+				const dist = hero.Distance2D(this.lastPosBeforeHeal)
+				if (dist < 300) {
+					this.isReturningAfterHeal = false
+					this.Log("Вернулся на исходную позицию")
+				}
 			}
 
 			if (this.fleeFromCreepsUnderTower.value && rawTime < this.lastDamageTime + 3.0) {
@@ -921,6 +943,16 @@ new (class JungleFarmScript {
 					return true
 				}
 			} else {
+				if (this.isReturningAfterHeal && this.lastPosBeforeHeal) {
+					this.setStatus("Возврат после хила")
+					const movePos = this.GetSafeMovePos(hero.Position, this.lastPosBeforeHeal, hero)
+					if (hero.Distance2D(movePos) > 150) {
+						hero.MoveTo(movePos, false, true)
+						this.lastOrderTime = rawTime
+						return true
+					}
+				}
+
 				if (this.laneFarm.value && this.lastCreepDeathPos) {
 					this.setStatus("Возврат на линию")
 					let target = this.lastCreepDeathPos
@@ -1014,15 +1046,18 @@ new (class JungleFarmScript {
 			if (hero.Level >= this.laneOnlyUntilLevel.value) return true // После нужного уровня фармим всё
 
 			const pos = c.Position
-			const isTop = pos.y > 2000 && pos.x < -2000
-			const isBot = pos.y < -2000 && pos.x > 2000
+			const isMid = this.IsMidLane(pos)
+			if (isMid) return !this.ignoreMid.value
+
+			const isTop = pos.y > pos.x // Верхняя половина карты (Top lane)
+			const isBot = pos.y < pos.x // Нижняя половина карты (Bot lane)
 			
 			switch (this.lanePriority.SelectedID) {
 				case 1: return isTop // Только верх
 				case 2: return isBot // Только низ
 				case 3: { // Меньше союзников
-					const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > 2000 && h.Position.x < -2000).length
-					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < -2000 && h.Position.x > 2000).length
+					const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
+					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
 					if (topAllies < botAllies) return isTop
 					if (botAllies < topAllies) return isBot
 					return isTop || isBot // Только верх или низ, НИКОГДА мид
@@ -1098,8 +1133,8 @@ new (class JungleFarmScript {
 		let priority = this.lanePriority.SelectedID
 		
 		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
-			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > 2000 && h.Position.x < -2000).length
-			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < -2000 && h.Position.x > 2000).length
+			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
+			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
 			priority = topAllies <= botAllies ? 1 : 2
 		}
 
