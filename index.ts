@@ -10,6 +10,7 @@ import {
 	LocalPlayer,
 	MapArea,
 	Menu,
+	PlayerResource,
 	RendererSDK,
 	TextFlags,
 	Tower,
@@ -98,10 +99,9 @@ new (class JungleFarmScript {
 	private readonly itemsNode = this.autoNode.AddNode("Авто-предметы")
 	private readonly usePhase = this.itemsNode.AddToggle("Phase Boots", true)
 	private readonly useMom = this.itemsNode.AddToggle("Mask of Madness", true)
-	private readonly useMidas = this.itemsNode.AddToggle("Hand of Midas", true)
+	private readonly autoMidas = this.itemsNode.AddToggle("Hand of Midas", true)
 	private readonly useQuelling = this.itemsNode.AddToggle("Quelling Blade", true)
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
-	private readonly autoSelectNeutral = this.itemsNode.AddToggle("Авто-выбор аспекта/нейтралки", true)
 
 	private readonly abilitiesNode = this.autoNode.AddNode("Авто-способности")
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
@@ -145,6 +145,8 @@ new (class JungleFarmScript {
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
+	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
+	private readonly forceNeutralButton = this.devNode.AddButton("Выбрать нейтралку СЕЙЧАС", "Принудительно попытаться открыть жетон и выбрать предмет")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
 	private readonly spotLevelSliders: Map<string, Menu.Slider> = new Map()
@@ -304,6 +306,14 @@ new (class JungleFarmScript {
 	}
 
 	constructor() {
+		this.forceNeutralButton.OnValue(() => {
+			const hero = LocalPlayer?.Hero
+			if (hero) {
+				this.Log("Принудительный выбор нейтралки...")
+				this.HandlePanorama(hero, true)
+			}
+		})
+
 		for (const spot of jungleSpots) {
 			const node = this.spotsNode.AddNode(spot.name)
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
@@ -486,7 +496,7 @@ new (class JungleFarmScript {
 			// Force initialize leveling menu even if script is disabled
 			const heroKey = `${hero.Name}_${hero.Index}`
 			if (hero.Team !== Team.None && !this.heroSettings.has(heroKey)) {
-				const heroNode = this.autoLevelingNode.AddNode(hero.Name, "", "Настройки прокачки для этого героя")
+				const heroNode = this.autoLevelingNode.AddNode(hero.Name, "", "Настройки для этого героя")
 				const settings: HeroLevelingSettings = {
 					node: heroNode,
 					autoLevel: heroNode.AddToggle("Авто-прокачка", true),
@@ -509,7 +519,7 @@ new (class JungleFarmScript {
 
 			// Skip logic if game hasn't truly started
 			if (GameState.RawGameTime < 0.5) {
-				if (this.autoSelectNeutral.value && typeof Panorama !== 'undefined') {
+				if (this.autoNeutral.value && typeof Panorama !== 'undefined') {
 					this.HandlePanorama(hero)
 				}
 				return
@@ -720,45 +730,64 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private HandlePanorama(hero: Unit): void {
-		if (!this.autoSelectNeutral.value || hero.Team === Team.None || typeof Panorama === 'undefined') return
+	private HandlePanorama(hero: Unit, forced: boolean = false): void {
+		if (!forced && (!this.autoNeutral.value || hero.Team === Team.None || typeof Panorama === 'undefined')) return
 
-		if (GameState.RawGameTime < this.lastOrderTime + 1.0) return
+		if (!forced && GameState.RawGameTime < this.lastOrderTime + 1.0) return
 
 		const dotaHud = Panorama.FindRootPanel("DotaHud")
 		if (!dotaHud) return
 
-		const token = hero.Items.find(i => i && i.Name.includes("item_tier") && i.Name.includes("token") && i.IsReady)
-		if (token) {
-			const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
-			const isPickerVisible = neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)
-			if (!isPickerVisible) {
-				hero.CastNoTarget(token, false, true)
-				this.lastOrderTime = GameState.RawGameTime
-				return
+		// 1. Проверка наличия доступных жетонов (нейтральных тиров)
+		const playerID = hero.PlayerID
+		const playerData = PlayerResource?.GetPlayerDataByPlayerID(playerID)
+		if (playerData) {
+			const hasNeutralTier = playerData.HasNeutralTier // Массив boolean для каждого тира
+			const hasRedeemedNeutralTier = playerData.HasRedeemedNeutralTier // Массив boolean, был ли уже выбран предмет
+
+			for (let tier = 0; tier < hasNeutralTier.length; tier++) {
+				if (hasNeutralTier[tier] && !hasRedeemedNeutralTier[tier]) {
+					const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
+					const isPickerVisible = neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)
+					
+					if (!isPickerVisible) {
+						this.Log(`Есть доступный жетон тира ${tier + 1}. Пытаюсь открыть меню.`)
+						// В современных версиях для открытия меню используется событие или клик по слоту, 
+						// так как предмета-жетона в инвентаре больше нет.
+						const neutralSlot = dotaHud.FindChildTraverse("neutral_item_slot") ?? dotaHud.FindChildTraverse("NeutralSlot")
+						if (neutralSlot) {
+							Panorama.DispatchEventAsync("Activated(program)", neutralSlot)
+							this.lastOrderTime = GameState.RawGameTime
+							return
+						}
+					}
+				}
 			}
 		}
 
 		const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
 		if (neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)) {
+			// Пробуем нажать кнопку подтверждения, если она активна
 			const hammer = neutralPicker.FindChildTraverse("Hammer") ?? 
 			               neutralPicker.FindChildTraverse("CraftButton") ?? 
 			               neutralPicker.FindChildTraverse("UnlockButton") ??
 			               neutralPicker.FindChildTraverse("RollButton")
 			
 			if (hammer && hammer.IsEnabled() && hammer.IsActivationEnabled()) {
+				this.Log("Подтверждаю выбор нейтралки")
 				Panorama.DispatchEventAsync("Activated(program)", hammer)
 				this.lastOrderTime = GameState.RawGameTime
 				return
 			}
 
+			// Если кнопка подтверждения не нажата, выбираем первый доступный предмет
 			const itemsContainer = neutralPicker.FindChildTraverse("ItemsContainer") ??
 			                       neutralPicker.FindChildTraverse("ArtifactsContainer")
 			const itemsCount = itemsContainer?.GetChildCount() ?? 0
 			if (itemsCount > 0 && itemsContainer) {
-				const randomIndex = Math.floor(Math.random() * itemsCount)
-				const item = itemsContainer.GetChild(randomIndex)
+				const item = itemsContainer.GetChild(0) // Берем первый
 				if (item && item.IsEnabled() && item.IsActivationEnabled()) {
+					this.Log("Выбираю первый предмет в списке")
 					Panorama.DispatchEventAsync("Activated(program)", item)
 					this.lastOrderTime = GameState.RawGameTime
 					return
@@ -766,26 +795,13 @@ new (class JungleFarmScript {
 			}
 		}
 
-		const facetPicker = dotaHud.FindChildTraverse("FacetPicker")
-		if (facetPicker && (this.visibleSymbol ? facetPicker.BHasClass(this.visibleSymbol) : false || facetPicker.GetActualLayoutWidth() > 0)) {
-			const facetsContainer = facetPicker.FindChildTraverse("FacetsContainer")
-			const facetsCount = facetsContainer?.GetChildCount() ?? 0
-			if (facetsCount > 0 && facetsContainer) {
-				const randomIndex = Math.floor(Math.random() * facetsCount)
-				const facet = facetsContainer.GetChild(randomIndex)
-				if (facet && facet.IsEnabled() && facet.IsActivationEnabled()) {
-					Panorama.DispatchEventAsync("Activated(program)", facet)
-					this.lastOrderTime = GameState.RawGameTime
-					return
-				}
-			}
-		}
-
+		// 2. Авто-использование нейтрального предмета (уже экипированного в слоте 16)
 		if (this.useNeutral.value && hero.IsAttacking) {
-			const neutralItem = hero.Items.find(i => i && i.IsNeutral && i.IsReady)
-			if (neutralItem) {
+			const neutralItem = hero.Inventory.NeutralItem
+			if (neutralItem && neutralItem.IsReady) {
 				const target = hero.Target
 				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
+					this.Log(`Использую нейтралку: ${neutralItem.Name}`)
 					hero.CastNoTarget(neutralItem, false, true)
 					this.lastOrderTime = GameState.RawGameTime
 					return
@@ -815,7 +831,7 @@ new (class JungleFarmScript {
 			}
 		}
 
-		if (this.useMidas.value) {
+		if (this.autoMidas.value) {
 			const midas = hero.GetItemByName("item_hand_of_midas")
 			if (midas?.IsReady) {
 				const target = this.cachedCreeps.find(
@@ -1229,8 +1245,9 @@ new (class JungleFarmScript {
 				const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(current.pos, hero)
 				const isPathSafe = !this.avoidTowers.value || !this.IsPathBlockedByTower(hero.Position, current.pos, hero)
 				const isBeingFarmed = isFarmed(current)
+				const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(current.pos) > 1000)
 
-				if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(current.name)) {
+				if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(current.name) && isRangeValid) {
 					return current
 				}
 			}
@@ -1247,8 +1264,9 @@ new (class JungleFarmScript {
 			const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(spot.pos, hero)
 			const isPathSafe = !this.avoidTowers.value || !this.IsPathBlockedByTower(hero.Position, spot.pos, hero)
 			const isBeingFarmed = isFarmed(spot)
+			const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(spot.pos) > 1000)
 
-			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(spot.name)) {
+			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(spot.name) && isRangeValid) {
 				const dist = hero.Distance2D(spot.pos)
 				if (dist < minDist) {
 					minDist = dist
