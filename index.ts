@@ -107,8 +107,9 @@ new (class JungleFarmScript {
 	private readonly lockCamera = this.visualNode.AddToggle("Центрировать камеру", false)
 
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
-	private readonly debugLogging = this.debugNode.AddToggle("Логирование в консоль", false, "Выводить подробную информацию о действиях скрипта в консоль лоадера")
 	private readonly drawDebugLog = this.debugNode.AddToggle("Показывать лог на экране", false, "Отрисовка последних действий скрипта в углу экрана")
+	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", false, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
+	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
 	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
 	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
 	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", false, "Показывать уведомление при получении урона от вражеского героя")
@@ -188,10 +189,6 @@ new (class JungleFarmScript {
 		
 		const formatted = `[${timeStr}] ${message}`
 		
-		if (this.debugLogging.value) {
-			console.log(`[JungleFarm] ${formatted}`)
-		}
-
 		this.logBuffer.push(formatted)
 		if (this.logBuffer.length > this.maxLogLines) {
 			this.logBuffer.shift()
@@ -296,8 +293,12 @@ new (class JungleFarmScript {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const hero = LocalPlayer?.Hero
 			if (hero && victim instanceof Creep && !victim.IsNeutral && victim.IsEnemy(hero) && hero.Distance2D(victim) < 1200) {
-				if ((!this.IsInTowerRange(victim.Position, hero) || !this.IsInAnyTowerRange(victim.Position, hero)) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
-					this.lastCreepDeathPos = victim.Position
+				const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+				const isAtBase = fountain && victim.Distance2D(fountain) < 3500
+
+				if (!isAtBase && (!this.IsInTowerRange(victim.Position, hero) || !this.IsInAnyTowerRange(victim.Position, hero)) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
+					const pos = victim.Position
+					this.lastCreepDeathPos = new Vector3(pos.x, pos.y, pos.z)
 				}
 				this.lastLaneCreepVisibleTime = GameState.RawGameTime
 			}
@@ -480,8 +481,9 @@ new (class JungleFarmScript {
 			const hpPercent = hero.HPPercentDecimal * 100
 			if (hpPercent < this.hpThreshold.value) {
 				if (!this.isGoingToFountain) {
-					this.lastPosBeforeHeal = hero.Position
-					this.Log(`HP ниже порога (${hpPercent.toFixed(1)}%), запоминаю позицию: ${this.lastPosBeforeHeal.toString()}`)
+					const pos = hero.Position
+					this.lastPosBeforeHeal = new Vector3(pos.x, pos.y, pos.z)
+					this.Log(`HP ниже порога (${hpPercent.toFixed(1)}%), запоминаю позицию: ${this.lastPosBeforeHeal.x.toFixed(0)}, ${this.lastPosBeforeHeal.y.toFixed(0)}`)
 				}
 				this.isGoingToFountain = true
 				this.isReturningAfterHeal = false
@@ -502,7 +504,7 @@ new (class JungleFarmScript {
 			} else if (hpPercent > 95) {
 				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal) {
 					this.isReturningAfterHeal = true
-					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${this.lastPosBeforeHeal.toString()}`)
+					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${this.lastPosBeforeHeal.x.toFixed(0)}, ${this.lastPosBeforeHeal.y.toFixed(0)}`)
 				}
 				this.isGoingToFountain = false
 			}
@@ -781,13 +783,22 @@ new (class JungleFarmScript {
 			const targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
 			
 			const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-			const isAtBase = fountain && hero.Distance2D(fountain) < 2500
+			const isAtBase = fountain && hero.Distance2D(fountain) < 3500
+
+			const hasValidLaneCreep = targetCreep !== undefined
+			const timeSinceLastCreep = rawTime - this.lastLaneCreepVisibleTime
+			const withinWaitTime = timeSinceLastCreep < this.laneWaitTime.value
+			const belowLevelThreshold = hero.Level < this.laneOnlyUntilLevel.value
 
 			const waitingOnLane = this.laneFarm.value && 
-			                      targetCreep === undefined && 
-			                      (rawTime - this.lastLaneCreepVisibleTime < this.laneWaitTime.value) &&
-			                      hero.Level < this.laneOnlyUntilLevel.value &&
+			                      !hasValidLaneCreep && 
+			                      withinWaitTime &&
+			                      belowLevelThreshold &&
 			                      !isAtBase
+
+			if (this.detailedDebug.value && !hasValidLaneCreep && this.laneFarm.value && !isAtBase && belowLevelThreshold) {
+				this.Log(`Ожидание на линии: Крип:${hasValidLaneCreep} Время:${timeSinceLastCreep.toFixed(1)}/${this.laneWaitTime.value} Lvl:${belowLevelThreshold}`)
+			}
 
 			const nearestSpot = (hero.Level >= this.laneOnlyUntilLevel.value && !waitingOnLane) ? this.GetNearestEnabledSpot(hero) : null
 
@@ -976,6 +987,19 @@ new (class JungleFarmScript {
 				}
 				this.setStatus("Нет доступных целей")
 				this.targetPos = undefined
+				
+				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
+				if (this.forcedBaseExit.value && distToFountain < 6000 && hero.Level < this.laneOnlyUntilLevel.value && !this.isReturningAfterHeal) {
+					const furthestTower = this.GetFurthestAlliedTower(hero)
+					if (furthestTower) {
+						this.setStatus("Принудительный выход")
+						const movePos = this.GetSafeMovePos(hero.Position, furthestTower.Position, hero)
+						hero.MoveTo(movePos, false, true)
+						this.lastOrderTime = GameState.RawGameTime
+						return true
+					}
+				}
+
 				return false
 			}
 		} catch (e) {
@@ -1039,44 +1063,71 @@ new (class JungleFarmScript {
 
 	private GetNearestLaneCreep(hero: Unit): Creep | undefined {
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-		const isAtBase = fountain && hero.Distance2D(fountain) < 2000
-		const maxDist = isAtBase ? 15000 : 5000
+		const isAtBase = fountain && hero.Distance2D(fountain) < 3500
+		const maxDist = (isAtBase || this.isReturningAfterHeal) ? 15000 : 6000
+
+		if (this.detailedDebug.value && this.isReturningAfterHeal) {
+			this.Log(`Поиск (HeroTeam:${hero.Team} Base:${isAtBase} Return:${this.isReturningAfterHeal})`)
+		}
 
 		// Доп. логика выбора линии
 		const filterByLane = (c: Creep) => {
-			if (hero.Level >= this.laneOnlyUntilLevel.value) return true // После нужного уровня фармим всё
-
 			const pos = c.Position
 			const isMid = this.IsMidLane(pos)
-			if (isMid) return !this.ignoreMid.value
+			
+			// На базе (или при выходе) разрешаем любых крипов, чтобы не тупил
+			if (isAtBase || this.isReturningAfterHeal) {
+				if (isMid) return !this.ignoreMid.value
+				return true
+			}
 
+			if (hero.Level >= this.laneOnlyUntilLevel.value) return true // После нужного уровня фармим всё
+			
 			const isTop = pos.y > pos.x // Верхняя половина карты (Top lane)
 			const isBot = pos.y < pos.x // Нижняя половина карты (Bot lane)
 			
+			let result = true
 			switch (this.lanePriority.SelectedID) {
-				case 1: return isTop // Только верх
-				case 2: return isBot // Только низ
+				case 1: result = isTop; break // Только верх
+				case 2: result = isBot; break // Только низ
 				case 3: { // Меньше союзников
 					const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
 					const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
-					if (topAllies < botAllies) return isTop
-					if (botAllies < topAllies) return isBot
-					return isTop || isBot // Только верх или низ, НИКОГДА мид
+					if (topAllies < botAllies) result = isTop
+					else if (botAllies < topAllies) result = isBot
+					else result = isTop || isBot // Только верх или низ, НИКОГДА мид
+					break
 				}
-				default: return true // Автоматически
+				default: result = true; break // Автоматически
 			}
+
+			if (this.detailedDebug.value && !result && hero.Distance2D(pos) < 2000) {
+				this.Log(`Крип на неверной линии: Top:${isTop} Bot:${isBot} Priority:${this.lanePriority.SelectedID}`)
+			}
+			return result
 		}
 
 		const creeps = this.cachedCreeps.filter(
-			c =>
-				c.IsEnemy(hero) &&
-				!c.IsNeutral &&
-				c.IsAlive &&
-				c.IsVisible &&
-				hero.Distance2D(c) < maxDist && // Игнорируем крипов на других линиях, если мы уже на линии
-				(!this.ignoreMid.value || !this.IsMidLane(c.Position)) &&
-				filterByLane(c) &&
-				!this.IsIgnoredUnit(c)
+			c => {
+				const isEnemy = c.IsEnemy(hero)
+				const isNotNeutral = !c.IsNeutral
+				const isAlive = c.IsAlive
+				const isVisible = c.IsVisible
+				const dist = hero.Distance2D(c)
+				const distValid = dist < maxDist
+				const midValid = !this.ignoreMid.value || !this.IsMidLane(c.Position)
+				const laneValid = filterByLane(c)
+				const notIgnored = !this.IsIgnoredUnit(c)
+
+				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && distValid && midValid && laneValid && notIgnored
+
+				if (this.detailedDebug.value && !allValid && dist < 3000) {
+					// Логируем только если крип рядом, чтобы не спамить
+					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} D:${distValid} M:${midValid} L:${laneValid} I:${notIgnored}`)
+				}
+
+				return allValid
+			}
 		)
 
 		if (creeps.length > 0) {
@@ -1120,6 +1171,37 @@ new (class JungleFarmScript {
 	private IsInAnyTowerRange(pos: Vector3, hero: Unit): boolean {
 		const tower = this.cachedTowers.find(t => t.IsAlive && t.Distance2D(pos) < 700 + 150)
 		return tower !== undefined
+	}
+
+	private GetFurthestAlliedTower(hero: Unit): Tower | undefined {
+		const alliedTowers = this.cachedTowers.filter(t => t.IsAlive && !t.IsEnemy(hero))
+		if (alliedTowers.length === 0) return undefined
+
+		const isRadiant = hero.Team === Team.Radiant
+		let priority = this.lanePriority.SelectedID
+		
+		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
+			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
+			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
+			priority = topAllies <= botAllies ? 1 : 2
+		}
+
+		const isTop = (t: Tower) => t.Position.y > t.Position.x
+		const isBot = (t: Tower) => t.Position.y < t.Position.x
+
+		const laneTowers = alliedTowers.filter(t => {
+			if (priority === 1) return isTop(t) && !this.IsMidLane(t.Position)
+			if (priority === 2) return isBot(t) && !this.IsMidLane(t.Position)
+			return true
+		})
+
+		if (laneTowers.length === 0) return alliedTowers.sort((a, b) => hero.Distance2D(b.Position) - hero.Distance2D(a.Position))[0]
+
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		if (!fountain) return laneTowers.sort((a, b) => hero.Distance2D(b.Position) - hero.Distance2D(a.Position))[0]
+
+		// Сортируем по дистанции от фонтана, берем самую дальнюю
+		return laneTowers.sort((a, b) => fountain.Distance2D(b.Position) - fountain.Distance2D(a.Position))[0]
 	}
 
 	private IsPathBlockedByTower(start: Vector3, end: Vector3, hero: Unit): boolean {
