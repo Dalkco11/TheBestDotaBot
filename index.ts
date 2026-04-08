@@ -47,13 +47,13 @@ const jungleSpots: JungleSpot[] = [
 new (class JungleFarmScript {
 	private readonly entry = Menu.AddEntry("Фарм Леса/Линии")
 	private readonly state = this.entry.AddToggle("Включить скрипт", false, "Общий переключатель работы скрипта")
-	private readonly toggleKey = this.entry.AddKeybind("Клавиша переключения", "F1", "Быстрое ВКЛ/ВЫКЛ")
+	private readonly toggleKey = this.entry.AddKeybind("Клавиша переключения", "7", "Быстрое ВКЛ/ВЫКЛ")
 
 	private readonly laneNode = this.entry.AddNode("Настройки Линии", "", "Все, что касается фарма крипов на линии")
 	private readonly laneFarm = this.laneNode.AddToggle("Фарм линии", true, "Разрешить герою фармить крипов на линии")
-	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
+	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 5, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
 	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 1, "Сколько секунд ждать новую пачку на линии")
-	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников"], 0, "Какую линию фармить в первую очередь (до уровня леса)")
+	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников"], 3, "Какую линию фармить в первую очередь (до уровня леса)")
 	private readonly randomWalkWaiting = this.laneNode.AddToggle("Случайная ходьба", true, "Активное движение в безопасной зоне при ожидании")
 	private readonly chaoticMoveAroundLastCreep = this.laneNode.AddToggle("Мансы у места смерти", true, "Движение вокруг позиции последнего убитого крипа")
 	private readonly laneTowerSafety = this.laneNode.AddToggle("Доп. радиус от башен", true, "Увеличивает безопасную дистанцию до башен на стадии линии")
@@ -61,7 +61,7 @@ new (class JungleFarmScript {
 	private readonly fleeFromCreepsUnderTower = this.laneNode.AddToggle("Отход при уроне под башней", true, "Уходить, если крипы под башней бьют вас, а вы их нет")
 
 	private readonly jungleNode = this.entry.AddNode("Настройки Леса", "", "Настройки фарма нейтральных крипов")
-	private readonly ownJungleOnly = this.jungleNode.AddToggle("Только свой лес", true, "Не заходить на вражескую территорию")
+	private readonly ownJungleOnly = this.jungleNode.AddToggle("Только свой лес", false, "Не заходить на вражескую территорию")
 	private readonly moveOnlyBetweenCamps = this.jungleNode.AddToggle("MoveTo между кемпами", true, "Не отвлекаться на героев при перебежках")
 	private readonly skipIfAllyFarming = this.jungleNode.AddToggle("Пропускать занятые союзником", true, "Не мешать союзникам фармить")
 	private readonly skipIfEnemyFarming = this.jungleNode.AddToggle("Пропускать занятые врагом", true, "Избегать стычек на спотах")
@@ -69,10 +69,9 @@ new (class JungleFarmScript {
 
 	private readonly safetyNode = this.entry.AddNode("Безопасность", "", "Настройки выживания и фильтры целей")
 	private readonly avoidTowers = this.safetyNode.AddToggle("Обходить башни", true, "Автоматический поиск пути в обход радиуса атак башен")
-	private readonly hpThreshold = this.safetyNode.AddSlider("Порог здоровья %", 30, 0, 100, 1, "При каком HP идти лечиться на базу")
-	private readonly autoTpLowHp = this.safetyNode.AddToggle("Авто-ТП на базу", false, "Использовать свиток телепортации, если HP ниже порога")
+	private readonly hpThreshold = this.safetyNode.AddSlider("Порог здоровья %", 22, 0, 100, 1, "При каком HP идти лечиться на базу")
+	private readonly autoTpLowHp = this.safetyNode.AddToggle("Авто-ТП на базу", true, "Использовать свиток телепортации, если HP ниже порога")
 	private readonly ignoreHeroes = this.safetyNode.AddToggle("Игнорировать героев", true, "Не атаковать героев при фарме")
-	private readonly ignoreHeroesTime = this.safetyNode.AddSlider("Игнорировать с минуты", 1, 0, 60, 1, "С какой минуты начинать игнорировать героев")
 	private readonly ignoreMid = this.safetyNode.AddToggle("Игнорировать мид", true, "Не ходить на центральную линию")
 
 	private readonly ignoreUnitsNode = this.entry.AddNode("Игнор юнитов", "", "Список юнитов, которых скрипт будет игнорировать")
@@ -82,6 +81,7 @@ new (class JungleFarmScript {
 	private readonly ignoreTreants = this.ignoreUnitsNode.AddToggle("Фурион (Пеньки)", true)
 	private readonly ignoreWolves = this.ignoreUnitsNode.AddToggle("Волки Люкана", true)
 	private readonly ignoreGolems = this.ignoreUnitsNode.AddToggle("Големы Варлока", true)
+	private readonly ignoreBeastmaster = this.ignoreUnitsNode.AddToggle("Бистмастер (Птица/кОбан)", true)
 	private readonly ignoreIllustions = this.ignoreUnitsNode.AddToggle("Все иллюзии", true)
 
 	private readonly autoNode = this.entry.AddNode("Автоматизация", "", "Авто-предметы и способности")
@@ -96,7 +96,7 @@ new (class JungleFarmScript {
 	private readonly abilitiesNode = this.autoNode.AddNode("Авто-способности")
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
 	private readonly useDamageAbilities = this.abilitiesNode.AddToggle("Урон", true)
-	private readonly aggressiveAbilities = this.abilitiesNode.AddToggle("Агрессивный режим", false)
+	private readonly aggressiveAbilities = this.abilitiesNode.AddToggle("Агрессивный режим", true)
 	private readonly manaThreshold = this.abilitiesNode.AddSlider("Мин. мана %", 30, 0, 100, 1)
 	private readonly enabledSpells: Map<string, Menu.Toggle> = new Map()
 	private readonly spellsWhitelistNode = this.abilitiesNode.AddNode("Белый список")
@@ -107,17 +107,17 @@ new (class JungleFarmScript {
 	private readonly lockCamera = this.visualNode.AddToggle("Центрировать камеру", false)
 
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
-	private readonly drawDebugLog = this.debugNode.AddToggle("Показывать лог на экране", false, "Отрисовка последних действий скрипта в углу экрана")
-	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", false, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
-	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
-	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
-	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
-	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", false, "Показывать уведомление при получении урона от вражеского героя")
-	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", false, "Писать в чат просьбу не бить при получении урона от героя")
-	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 1, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
-	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 2, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
 	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
+	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
+	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
+	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", true, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
+	private readonly drawDebugLog = this.debugNode.AddToggle("Показывать лог на экране", true, "Отрисовка последних действий скрипта в углу экрана")
+	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
+	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", true, "Показывать уведомление при получении урона от вражеского героя")
+	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", true, "Писать в чат просьбу не бить при получении урона от героя")
+	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
+	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
@@ -459,7 +459,7 @@ new (class JungleFarmScript {
 				this.lastMinute = currentMinute
 			}
 
-			if (this.ignoreHeroes.value && hero.IsAttacking && rawTime >= this.ignoreHeroesTime.value * 60) {
+			if (this.ignoreHeroes.value && hero.IsAttacking) {
 				const target = hero.Target
 				if (target instanceof Unit && target.IsHero && target.IsEnemy(hero)) {
 					hero.OrderStop(false, true)
@@ -502,9 +502,12 @@ new (class JungleFarmScript {
 					}
 				}
 			} else if (hpPercent > 95) {
-				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal) {
+				const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value
+				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal && !canFarmJungle) {
 					this.isReturningAfterHeal = true
 					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${this.lastPosBeforeHeal.x.toFixed(0)}, ${this.lastPosBeforeHeal.y.toFixed(0)}`)
+				} else if (this.isGoingToFountain && canFarmJungle) {
+					this.Log(`Здоровье восстановлено, уровень ${hero.Level} позволяет фармить лес, возврат на линию пропущен`)
 				}
 				this.isGoingToFountain = false
 			}
@@ -1106,6 +1109,7 @@ new (class JungleFarmScript {
 		if (this.ignoreTreants.value && name.includes("_treant")) return true
 		if (this.ignoreWolves.value && name.includes("_wolf")) return true
 		if (this.ignoreGolems.value && name.includes("_golem")) return true
+		if (this.ignoreBeastmaster.value && (name.includes("beastmaster_hawk") || name.includes("beastmaster_boar"))) return true
 		if (this.ignoreIllustions.value && unit.IsIllusion) return true
 		return false
 	}
