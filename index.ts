@@ -10,6 +10,7 @@ import {
 	LocalPlayer,
 	MapArea,
 	Menu,
+	Player,
 	PlayerResource,
 	RendererSDK,
 	TextFlags,
@@ -154,6 +155,7 @@ new (class JungleFarmScript {
 	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
 	private readonly visibleSymbol = typeof Panorama !== 'undefined' ? Panorama.MakeSymbol("Visible") : null
+	private lastPanoramaTime = 0
 	private lastMinute = -1
 	private lastLaneCreepVisibleTime = 0
 	private lastOrderTime = 0
@@ -184,6 +186,23 @@ new (class JungleFarmScript {
 	private cachedTowers: Tower[] = []
 	private cachedCreeps: Creep[] = []
 	private cachedHeroes: Unit[] = []
+
+	private GetRandomizedPosition(pos: Vector3): Vector3 {
+		const randomOffset = () => Math.floor(Math.random() * 81) - 40 // От -40 до +40
+		return new Vector3(pos.x + randomOffset(), pos.y + randomOffset(), pos.z)
+	}
+
+	private GetRandomTargetInRadius(center: Creep, radius: number, hero: Unit): Creep {
+		const nearby = this.cachedCreeps.filter(c => 
+			c.IsAlive && 
+			c.IsVisible && 
+			c.IsEnemy(hero) &&
+			c.IsNeutral === center.IsNeutral &&
+			c.Distance2D(center) <= radius
+		)
+		if (nearby.length <= 1) return center
+		return nearby[Math.floor(Math.random() * nearby.length)]
+	}
 
 	private SafeGetEntities<T>(cls: any): T[] {
 		try {
@@ -310,7 +329,7 @@ new (class JungleFarmScript {
 			const hero = LocalPlayer?.Hero
 			if (hero) {
 				this.Log("Принудительный выбор нейтралки...")
-				this.HandlePanorama(hero, true)
+				this.HandlePanorama(hero)
 			}
 		})
 
@@ -621,6 +640,13 @@ new (class JungleFarmScript {
 				: []
 
 			const rawTime = GameState.RawGameTime
+
+			// Вызов HandlePanorama раз в 3 секунды
+			if (rawTime > this.lastPanoramaTime + 3.0) {
+				this.HandlePanorama(hero)
+				this.lastPanoramaTime = rawTime
+			}
+
 			const currentMinute = Math.floor(rawTime / 60)
 			
 			if (this.lastMinute === -1) this.lastMinute = currentMinute
@@ -722,8 +748,6 @@ new (class JungleFarmScript {
 					this.lastOrderTime = rawTime
 					return
 				}
-
-				this.HandlePanorama(hero)
 			}
 		} catch (e) {
 			this.Log(`Update Error: ${e}`)
@@ -731,80 +755,74 @@ new (class JungleFarmScript {
 	}
 
 	private HandlePanorama(hero: Unit, forced: boolean = false): void {
-		if (!forced && (!this.autoNeutral.value || hero.Team === Team.None || typeof Panorama === 'undefined')) return
+		if (!forced && (!this.autoNeutral.value || hero.Team === Team.None)) return
 
-		if (!forced && GameState.RawGameTime < this.lastOrderTime + 1.0) return
+		// Проверка нейтрального слота (16) строго через Inventory.GetItem
+		const neutralItem = hero.Inventory.GetItem(16)
+		
+		// Если слот пуст (null), пробуем открыть меню или выбрать предмет
+		if (!neutralItem) {
+			if (typeof Panorama !== 'undefined') {
+				const dotaHud = Panorama.FindRootPanel("DotaHud")
+				if (dotaHud) {
+					const playerID = hero.PlayerID
+					const playerData = PlayerResource?.GetPlayerDataByPlayerID(playerID)
+					if (playerData) {
+						const hasNeutralTier = playerData.HasNeutralTier // Массив boolean для каждого тира
+						const hasRedeemedNeutralTier = playerData.HasRedeemedNeutralTier // Массив boolean, был ли уже выбран предмет
 
-		const dotaHud = Panorama.FindRootPanel("DotaHud")
-		if (!dotaHud) return
-
-		// 1. Проверка наличия доступных жетонов (нейтральных тиров)
-		const playerID = hero.PlayerID
-		const playerData = PlayerResource?.GetPlayerDataByPlayerID(playerID)
-		if (playerData) {
-			const hasNeutralTier = playerData.HasNeutralTier // Массив boolean для каждого тира
-			const hasRedeemedNeutralTier = playerData.HasRedeemedNeutralTier // Массив boolean, был ли уже выбран предмет
-
-			for (let tier = 0; tier < hasNeutralTier.length; tier++) {
-				if (hasNeutralTier[tier] && !hasRedeemedNeutralTier[tier]) {
-					const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
-					const isPickerVisible = neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)
-					
-					if (!isPickerVisible) {
-						this.Log(`Есть доступный жетон тира ${tier + 1}. Пытаюсь открыть меню.`)
-						// В современных версиях для открытия меню используется событие или клик по слоту, 
-						// так как предмета-жетона в инвентаре больше нет.
-						const neutralSlot = dotaHud.FindChildTraverse("neutral_item_slot") ?? dotaHud.FindChildTraverse("NeutralSlot")
-						if (neutralSlot) {
-							Panorama.DispatchEventAsync("Activated(program)", neutralSlot)
-							this.lastOrderTime = GameState.RawGameTime
-							return
+						for (let tier = 0; tier < hasNeutralTier.length; tier++) {
+							if (hasNeutralTier[tier] && !hasRedeemedNeutralTier[tier]) {
+								const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
+								const isPickerVisible = neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)
+								
+								if (!isPickerVisible) {
+									this.Log(`Есть доступный жетон тира ${tier + 1}. Пытаюсь открыть меню.`)
+									const neutralSlot = dotaHud.FindChildTraverse("neutral_item_slot") ?? dotaHud.FindChildTraverse("NeutralSlot")
+									if (neutralSlot) {
+										Panorama.DispatchEventAsync("Activated(program)", neutralSlot)
+										this.lastOrderTime = GameState.RawGameTime
+										return
+									}
+								} else {
+									// Если меню открыто, пробуем отправить приказ на выбор первого предмета
+									if (typeof (Player as any).PrepareUnitOrders === 'function') {
+										(Player as any).PrepareUnitOrders({
+											Order: 34,
+											TargetIndex: 0,
+											EntityIndex: hero.Index,
+											Position: new Vector3(0, 0, 0),
+											AbilityIndex: 0,
+											Queue: false
+										})
+										this.Log("Меню открыто, отправлен приказ на выбор (Order 34)")
+										return
+									}
+								}
+							}
 						}
 					}
 				}
 			}
-		}
 
-		const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
-		if (neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)) {
-			// Пробуем нажать кнопку подтверждения, если она активна
-			const hammer = neutralPicker.FindChildTraverse("Hammer") ?? 
-			               neutralPicker.FindChildTraverse("CraftButton") ?? 
-			               neutralPicker.FindChildTraverse("UnlockButton") ??
-			               neutralPicker.FindChildTraverse("RollButton")
-			
-			if (hammer && hammer.IsEnabled() && hammer.IsActivationEnabled()) {
-				this.Log("Подтверждаю выбор нейтралки")
-				Panorama.DispatchEventAsync("Activated(program)", hammer)
-				this.lastOrderTime = GameState.RawGameTime
-				return
+			// Резервный вариант: если Panorama недоступна, пробуем отправить приказ напрямую
+			if (typeof (Player as any).PrepareUnitOrders === 'function') {
+				(Player as any).PrepareUnitOrders({
+					Order: 34,
+					TargetIndex: 0,
+					EntityIndex: hero.Index,
+					Position: new Vector3(0, 0, 0),
+					AbilityIndex: 0,
+					Queue: false
+				})
 			}
-
-			// Если кнопка подтверждения не нажата, выбираем первый доступный предмет
-			const itemsContainer = neutralPicker.FindChildTraverse("ItemsContainer") ??
-			                       neutralPicker.FindChildTraverse("ArtifactsContainer")
-			const itemsCount = itemsContainer?.GetChildCount() ?? 0
-			if (itemsCount > 0 && itemsContainer) {
-				const item = itemsContainer.GetChild(0) // Берем первый
-				if (item && item.IsEnabled() && item.IsActivationEnabled()) {
-					this.Log("Выбираю первый предмет в списке")
-					Panorama.DispatchEventAsync("Activated(program)", item)
-					this.lastOrderTime = GameState.RawGameTime
-					return
-				}
-			}
-		}
-
-		// 2. Авто-использование нейтрального предмета (уже экипированного в слоте 16)
-		if (this.useNeutral.value && hero.IsAttacking) {
-			const neutralItem = hero.Inventory.NeutralItem
-			if (neutralItem && neutralItem.IsReady) {
+		} else if (this.useNeutral.value && hero.IsAttacking) {
+			// Авто-использование уже экипированного предмета
+			if (neutralItem.IsReady) {
 				const target = hero.Target
 				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
 					this.Log(`Использую нейтралку: ${neutralItem.Name}`)
 					hero.CastNoTarget(neutralItem, false, true)
-					this.lastOrderTime = GameState.RawGameTime
-					return
 				}
 			}
 		}
@@ -921,7 +939,7 @@ new (class JungleFarmScript {
 			this.targetPos = fountain.Position
 			if (hero.Distance2D(fountain) > 200) {
 				const movePos = this.GetSafeMovePos(hero.Position, fountain.Position, hero)
-				hero.MoveTo(movePos, false, true)
+				hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 				this.lastOrderTime = GameState.RawGameTime
 			}
 		}
@@ -947,7 +965,7 @@ new (class JungleFarmScript {
 		
 		// Используем GetSafeMovePos только если мы НЕ под башней, чтобы не было кругов
 		// Если мы УЖЕ под башней, просто бежим по прямой от неё в безопасную сторону
-		hero.MoveTo(movePos, false, true)
+		hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 		this.lastOrderTime = GameState.RawGameTime
 	}
 
@@ -971,7 +989,10 @@ new (class JungleFarmScript {
 				this.isEscapingTower = false
 			}
 
-			const targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
+			let targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
+			if (targetCreep) {
+				targetCreep = this.GetRandomTargetInRadius(targetCreep, 100, hero)
+			}
 			
 			const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 			const isAtBase = fountain && hero.Distance2D(fountain) < 3500
@@ -1014,11 +1035,11 @@ new (class JungleFarmScript {
 
 						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero)
 						if (movePos.Distance2D(targetCreep.Position) > 100) {
-							hero.MoveTo(movePos, false, true)
+							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						} else {
 							if (canOrbWalk && hero.IsAttacking) {
 								const stepBack = hero.Position.Subtract(targetCreep.Position).Normalize().MultiplyScalar(100)
-								hero.MoveTo(hero.Position.Add(stepBack), false, true)
+								hero.MoveTo(this.GetRandomizedPosition(hero.Position.Add(stepBack)), false, true)
 							} else {
 								hero.AttackTarget(targetCreep, false, true)
 							}
@@ -1050,7 +1071,7 @@ new (class JungleFarmScript {
 					if (distToCenter > 800) {
 						const movePos = this.GetSafeMovePos(hero.Position, centerPos, hero)
 						if (movePos.Distance2D(hero.Position) > 100) {
-							hero.MoveTo(movePos, false, true)
+							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 							this.lastOrderTime = rawTime
 							return true
 						}
@@ -1085,7 +1106,7 @@ new (class JungleFarmScript {
 					if (this.lastRandomWalkPos && rawTime > this.lastOrderTime + 0.25) {
 						if (!this.IsInTowerRange(this.lastRandomWalkPos, hero)) {
 							const movePos = this.GetSafeMovePos(hero.Position, this.lastRandomWalkPos, hero)
-							hero.MoveTo(movePos, false, true)
+							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 							this.lastOrderTime = rawTime
 						} else {
 							this.lastRandomWalkPosUpdateTime = 0
@@ -1099,7 +1120,7 @@ new (class JungleFarmScript {
 			if (nearestSpot) {
 				this.targetPos = nearestSpot.pos
 
-				const neutral = this.cachedCreeps.find(
+				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
 						c.IsEnemy(hero) &&
 						c.IsNeutral &&
@@ -1110,7 +1131,10 @@ new (class JungleFarmScript {
 						!this.IsInTowerRange(c.Position, hero)
 				)
 
-				if (neutral) {
+				if (neutralsInSpot.length > 0) {
+					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
+					const neutral = this.GetRandomTargetInRadius(closestNeutral, 100, hero)
+					
 					this.setStatus("Фарм леса")
 					this.targetPos = neutral.Position
 
@@ -1118,7 +1142,7 @@ new (class JungleFarmScript {
 					if (!isAttackingSame || this.spamClick.value) {
 						const movePos = this.GetSafeMovePos(hero.Position, neutral.Position, hero)
 						if (movePos.Distance2D(neutral.Position) > 100) {
-							hero.MoveTo(movePos, false, true)
+							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						} else {
 							hero.AttackTarget(neutral, false, true)
 						}
@@ -1135,13 +1159,13 @@ new (class JungleFarmScript {
 					const movePos = this.GetSafeMovePos(hero.Position, nearestSpot.pos, hero)
 
 					if (this.moveOnlyBetweenCamps.value) {
-						hero.MoveTo(movePos, false, true)
+						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 					} else {
 						if (this.lastOrderWasAttack) {
-							hero.MoveTo(movePos, false, true)
+							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 							this.lastOrderWasAttack = false
 						} else {
-							hero.AttackMove(movePos, false, true)
+							hero.AttackMove(this.GetRandomizedPosition(movePos), false, true)
 							this.lastOrderWasAttack = true
 						}
 					}
@@ -1170,7 +1194,7 @@ new (class JungleFarmScript {
 					this.setStatus("Возврат после хила")
 					const movePos = this.GetSafeMovePos(hero.Position, this.lastPosBeforeHeal, hero)
 					if (hero.Distance2D(movePos) > 150) {
-						hero.MoveTo(movePos, false, true)
+						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						this.lastOrderTime = rawTime
 						return true
 					}
@@ -1191,7 +1215,7 @@ new (class JungleFarmScript {
 
 					const movePos = this.GetSafeMovePos(hero.Position, target, hero)
 					if (hero.Distance2D(movePos) > 150) {
-						hero.MoveTo(movePos, false, true)
+						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						this.lastOrderTime = GameState.RawGameTime
 						return true
 					}
@@ -1205,7 +1229,7 @@ new (class JungleFarmScript {
 					if (furthestTower) {
 						this.setStatus("Принудительный выход")
 						const movePos = this.GetSafeMovePos(hero.Position, furthestTower.Position, hero)
-						hero.MoveTo(movePos, false, true)
+						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						this.lastOrderTime = GameState.RawGameTime
 						return true
 					}
