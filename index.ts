@@ -169,6 +169,7 @@ new (class JungleFarmScript {
 	private currentStatus = "Ожидание (Сброс)"
 	private targetPos: Vector3 | undefined
 	private currentJungleSpotName: string | null = null
+	private currentFarmMode: "lane" | "jungle" | "none" = "none"
 	private lastCreepDeathPos: Vector3 | undefined
 	private lastRandomWalkPos: Vector3 | undefined
 	private lastRandomWalkPosUpdateTime = 0
@@ -421,12 +422,16 @@ new (class JungleFarmScript {
 		this.isReturningAfterHeal = false
 		this.lastPosBeforeHeal = undefined
 		this.setStatus("Ожидание (Сброс)")
+		this.currentFarmMode = "none"
 		this.targetPos = undefined
 		this.lastCreepDeathPos = undefined
 		this.lastRandomWalkPos = undefined
 		this.lastRandomWalkPosUpdateTime = 0
 		this.lastCameraLock = false
 		this.lastDamageTime = 0
+		this.lastHeroAttackerTime = 0
+		this.lastHeroChatTime = 0
+		this.lastHeroAttackerName = ""
 		
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
@@ -451,7 +456,7 @@ new (class JungleFarmScript {
 					// Отправка в чат при уроне
 					if (this.chatOnHeroDamage.value && 
 					    hero.Level >= this.chatOnHeroDamageLevel.value && 
-					    GameState.RawGameTime > this.lastHeroChatTime + 10.0) { // Задержка 10 сек между сообщениями
+					    (this.lastHeroChatTime === 0 || GameState.RawGameTime > this.lastHeroChatTime + 10.0)) { // Задержка 10 сек между сообщениями
 						
 						const displayName = name.charAt(0) + name.slice(1).toLowerCase()
 						this.SafeExecuteCommand(`say "Mr ${displayName} не бей меня пожалуйста"`)
@@ -1010,15 +1015,13 @@ new (class JungleFarmScript {
 				}
 			}
 
-			let targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
-			if (targetCreep) {
-				targetCreep = this.GetRandomTargetInRadius(targetCreep, 100, hero)
-			}
+			const closestLaneCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
+			let targetCreep = closestLaneCreep
 			
 			const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 			const isAtBase = fountain && hero.Distance2D(fountain) < 5500
 
-			const hasValidLaneCreep = targetCreep !== undefined
+			const hasValidLaneCreep = closestLaneCreep !== undefined
 			const timeSinceLastCreep = rawTime - this.lastLaneCreepVisibleTime
 			const withinWaitTime = timeSinceLastCreep < this.laneWaitTime.value
 			const belowLevelThreshold = hero.Level < this.laneOnlyUntilLevel.value
@@ -1038,10 +1041,37 @@ new (class JungleFarmScript {
 			const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value || forceLanePriority
 			const nearestSpot = (canFarmJungle && !waitingOnLane) ? this.GetNearestEnabledSpot(hero) : null
 
-			if (targetCreep && (forceLanePriority || !nearestSpot || hero.Distance2D(targetCreep) < hero.Distance2D(nearestSpot.pos))) {
+			// Логика выбора режима (Линия или Лес) с гистерезисом 300
+			let shouldFarmLane = false
+			if (closestLaneCreep) {
+				const distToCreep = hero.Distance2D(closestLaneCreep)
+				const distToJungle = nearestSpot ? hero.Distance2D(nearestSpot.pos) : Infinity
+				
+				if (forceLanePriority || !nearestSpot) {
+					shouldFarmLane = true
+				} else {
+					const hysteresis = 300
+					if (this.currentFarmMode === "lane") {
+						// Если уже на линии, переходим в лес только если он значительно ближе
+						shouldFarmLane = distToCreep < distToJungle + hysteresis
+					} else if (this.currentFarmMode === "jungle") {
+						// Если уже в лесу, возвращаемся на линию только если она значительно ближе
+						shouldFarmLane = distToCreep < distToJungle - hysteresis
+					} else {
+						// Начальный выбор
+						shouldFarmLane = distToCreep < distToJungle
+					}
+				}
+			}
+
+			if (shouldFarmLane && targetCreep) {
 				const isCreepInEnemyTowerRange = this.IsInTowerRange(targetCreep.Position, hero)
 				if (!isCreepInEnemyTowerRange) {
+					this.currentFarmMode = "lane"
 					this.setStatus("Фарм линии")
+					
+					// Рандомизация цели только для атаки
+					targetCreep = this.GetRandomTargetInRadius(targetCreep, 100, hero)
 					this.targetPos = targetCreep.Position
 
 					const isAttackingSame = hero.TargetIndex_ === targetCreep.Index
@@ -1139,6 +1169,7 @@ new (class JungleFarmScript {
 			}
 
 			if (nearestSpot) {
+				this.currentFarmMode = "jungle"
 				this.targetPos = nearestSpot.pos
 
 				const neutralsInSpot = this.cachedCreeps.filter(
@@ -1242,6 +1273,7 @@ new (class JungleFarmScript {
 					}
 				}
 				this.setStatus("Нет доступных целей")
+				this.currentFarmMode = "none"
 				this.targetPos = undefined
 				
 				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
