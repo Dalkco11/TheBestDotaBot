@@ -13,6 +13,7 @@ import {
 	Player,
 	PlayerResource,
 	RendererSDK,
+	Rune,
 	TextFlags,
 	Tower,
 	Unit,
@@ -144,6 +145,7 @@ new (class JungleFarmScript {
 	private readonly setMediumCampsLvl = this.debugNode.AddButton("Авто: Средние кемпы (4 лвл)", "Установить уровень 4 для всех средних лагерей")
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
+	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
 	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
@@ -187,6 +189,7 @@ new (class JungleFarmScript {
 	private cachedTowers: Tower[] = []
 	private cachedCreeps: Creep[] = []
 	private cachedHeroes: Unit[] = []
+	private cachedRunes: Rune[] = []
 
 	private GetRandomizedPosition(pos: Vector3, radius: number = 40): Vector3 {
 		const randomOffset = () => Math.floor(Math.random() * (radius * 2 + 1)) - radius
@@ -636,6 +639,7 @@ new (class JungleFarmScript {
 			// Cache entities
 			this.cachedTowers = this.SafeGetEntities<Tower>(Tower)
 			this.cachedCreeps = this.SafeGetEntities<Creep>(Creep)
+			this.cachedRunes = this.pickAllRunes.value ? this.SafeGetEntities<Rune>(Rune) : []
 			this.cachedHeroes = (this.skipIfAllyFarming.value || this.skipIfEnemyFarming.value) 
 				? this.SafeGetEntities<Unit>(Unit).filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
 				: []
@@ -990,6 +994,20 @@ new (class JungleFarmScript {
 					return true
 				}
 				this.isEscapingTower = false
+			}
+
+			if (this.pickAllRunes.value) {
+				const rune = this.cachedRunes.find(r => 
+					hero.Distance2D(r) < 1500 && 
+					!this.IsInTowerRange(r.Position, hero)
+				)
+				if (rune) {
+					this.setStatus(`Подбор руны: ${rune.Name.replace("rune_", "")}`)
+					this.targetPos = rune.Position
+					hero.PickupRune(rune, false, true)
+					this.lastOrderTime = rawTime
+					return true
+				}
 			}
 
 			let targetCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
