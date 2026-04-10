@@ -487,6 +487,29 @@ new (class JungleFarmScript {
 	}
 
 	private OnDraw(): void {
+		// Draw promotional message at the bottom center of the screen
+		const screenSize = RendererSDK.WindowSize
+		const promoText = "Лучший сервис по отмыву поряды: BehUp.online"
+		const fontSize = 24
+		const font = "Roboto"
+		const textColor = new Color(255, 255, 0, 255) // Yellow color
+		// RendererSDK.GetTextWidth and GetTextHeight are not directly available. We'll approximate for now or assume a fixed width.
+		// For now, let's just center it based on screen width.
+		// The RendererSDK.Text function usually handles alignment if it's given a specific text flag,
+		// but since we're just given basic parameters, manual centering is needed.
+
+		// Let's assume a rough average character width for centering.
+		// A more accurate way would be to query the text metrics, but that's not exposed in RendererSDK.
+		// We'll calculate text width roughly or just pick a position.
+
+		const estimatedTextWidth = promoText.length * (fontSize * 0.6) // rough estimate
+		const textPosX = (screenSize.x / 2) - (estimatedTextWidth / 2)
+		const textPosY = screenSize.y - fontSize - 50 // 50 pixels from the bottom, adjusting for font size
+
+		RendererSDK.Text(promoText, new Vector2(textPosX, textPosY), textColor, font, fontSize)
+
+		// Original content of OnDraw starts here
+
 		try {
 			if (typeof GameState === 'undefined') return
 
