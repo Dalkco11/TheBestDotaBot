@@ -119,6 +119,8 @@ new (class JungleFarmScript {
 	private readonly visualNode = this.entry.AddNode("Визуализация", "", "Отрисовка маршрутов и статусов")
 	private readonly drawSpots = this.visualNode.AddToggle("Рисовать споты", true)
 	private readonly drawRoute = this.visualNode.AddToggle("Рисовать маршрут", true)
+	private readonly drawRouteStyle = this.visualNode.AddDropdown("Стиль маршрута", ["Линия", "Стрелки"], 0, "Визуальный стиль отрисовки маршрута")
+	private readonly drawRouteColor = this.visualNode.AddColorPicker("Цвет маршрута", new Color(128, 0, 128).SetA(255), "Цвет отрисовываемого маршрута")
 	private readonly lockCamera = this.visualNode.AddToggle("Центрировать камеру", false)
 
 	private readonly testNode = this.entry.AddNode("Тест (Экспериментально)", "", "Функции для тестирования APM и скорости")
@@ -234,11 +236,8 @@ new (class JungleFarmScript {
 	private Log(message: string): void {
 		let timeStr = "0.00"
 		try {
-			if (typeof GameState !== 'undefined' && GameState.RawGameTime > 0) {
+			if (typeof GameState !== 'undefined' && GameState.RawGameTime !== undefined) {
 				timeStr = GameState.RawGameTime.toFixed(2)
-			} else {
-				const now = new Date()
-				timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`
 			}
 		} catch (e) {
 			// Fallback if GameState is not ready
@@ -620,8 +619,27 @@ new (class JungleFarmScript {
 				const heroScreen = RendererSDK.WorldToScreen(hero.Position)
 				const targetScreen = RendererSDK.WorldToScreen(this.targetPos)
 				if (heroScreen && targetScreen) {
-					RendererSDK.Line(heroScreen, targetScreen, Color.Yellow.SetA(150), 2)
-					RendererSDK.OutlinedCircle(targetScreen, new Vector2(20, 20), Color.Red)
+					const lineColor = this.drawRouteColor.SelectedColor
+					const arrowSize = new Vector2(15, 5) // Длина и ширина стрелки
+					const arrowInterval = 40 // Интервал между стрелками
+
+					if (this.drawRouteStyle.SelectedID === 1) { // 1 means "Стрелки"
+						const lineVector = targetScreen.Subtract(heroScreen)
+						const angle = Math.atan2(lineVector.y, lineVector.x) * 180 / Math.PI
+						const distance = lineVector.Length
+						const normalizedLineVector = lineVector.Normalize()
+
+						for (let i = 0; i < distance; i += arrowInterval) {
+							const arrowCenter = heroScreen.Add(normalizedLineVector.MultiplyScalar(i))
+							RendererSDK.FilledRect(arrowCenter, arrowSize, lineColor, angle)
+						}
+						// Draw a target marker
+						RendererSDK.OutlinedCircle(targetScreen, new Vector2(25, 25), lineColor)
+
+					} else { // 0 means "Линия"
+						RendererSDK.Line(heroScreen, targetScreen, lineColor, 4)
+						RendererSDK.OutlinedCircle(targetScreen, new Vector2(25, 25), lineColor)
+					}
 				}
 			}
 
