@@ -146,6 +146,7 @@ new (class JungleFarmScript {
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
+	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
 	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
@@ -170,6 +171,8 @@ new (class JungleFarmScript {
 	private targetPos: Vector3 | undefined
 	private currentJungleSpotName: string | null = null
 	private currentFarmMode: "lane" | "jungle" | "none" = "none"
+	private lastModeSwitchTime = 0
+	private readonly occupiedSpots: Map<string, number> = new Map()
 	private lastCreepDeathPos: Vector3 | undefined
 	private lastRandomWalkPos: Vector3 | undefined
 	private lastRandomWalkPosUpdateTime = 0
@@ -423,6 +426,8 @@ new (class JungleFarmScript {
 		this.lastPosBeforeHeal = undefined
 		this.setStatus("Ожидание (Сброс)")
 		this.currentFarmMode = "none"
+		this.lastModeSwitchTime = 0
+		this.occupiedSpots.clear()
 		this.targetPos = undefined
 		this.lastCreepDeathPos = undefined
 		this.lastRandomWalkPos = undefined
@@ -632,6 +637,15 @@ new (class JungleFarmScript {
 			RendererSDK.Text(targetText, new Vector2(200, 260), Color.White, "Roboto", 20)
 			RendererSDK.Text(pointsText, new Vector2(200, 290), Color.Yellow, "Roboto", 20)
 			RendererSDK.Text(stateText, new Vector2(200, 320), this.state.value ? Color.Green : Color.Red, "Roboto", 20)
+
+			if (this.showGameTimer.value) {
+				const time = Math.floor(GameState.RawGameTime)
+				const absTime = Math.abs(time)
+				const mins = Math.floor(absTime / 60)
+				const secs = absTime % 60
+				const timeStr = `${time < 0 ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
+				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, 350), Color.White.SetA(200), "Roboto", 20)
+			}
 		} catch (e) {
 			this.Log(`Draw Error: ${e}`)
 		}
@@ -1051,12 +1065,16 @@ new (class JungleFarmScript {
 					shouldFarmLane = true
 				} else {
 					const hysteresis = 300
+					const modeSwitchCooldown = 3.0 // 3 секунды задержка на смену режима
+
 					if (this.currentFarmMode === "lane") {
-						// Если уже на линии, переходим в лес только если он значительно ближе
-						shouldFarmLane = distToCreep < distToJungle + hysteresis
+						// Если уже на линии, переходим в лес только если он значительно ближе и прошло время КД
+						const canSwitch = rawTime > this.lastModeSwitchTime + modeSwitchCooldown
+						shouldFarmLane = !canSwitch || (distToCreep < distToJungle + hysteresis)
 					} else if (this.currentFarmMode === "jungle") {
-						// Если уже в лесу, возвращаемся на линию только если она значительно ближе
-						shouldFarmLane = distToCreep < distToJungle - hysteresis
+						// Если уже в лесу, возвращаемся на линию только если она значительно ближе и прошло время КД
+						const canSwitch = rawTime > this.lastModeSwitchTime + modeSwitchCooldown
+						shouldFarmLane = canSwitch && (distToCreep < distToJungle - hysteresis)
 					} else {
 						// Начальный выбор
 						shouldFarmLane = distToCreep < distToJungle
@@ -1067,7 +1085,10 @@ new (class JungleFarmScript {
 			if (shouldFarmLane && targetCreep) {
 				const isCreepInEnemyTowerRange = this.IsInTowerRange(targetCreep.Position, hero)
 				if (!isCreepInEnemyTowerRange) {
-					this.currentFarmMode = "lane"
+					if (this.currentFarmMode !== "lane") {
+						this.currentFarmMode = "lane"
+						this.lastModeSwitchTime = rawTime
+					}
 					this.setStatus("Фарм линии")
 					
 					// Рандомизация цели только для атаки
@@ -1169,7 +1190,10 @@ new (class JungleFarmScript {
 			}
 
 			if (nearestSpot) {
-				this.currentFarmMode = "jungle"
+				if (this.currentFarmMode !== "jungle") {
+					this.currentFarmMode = "jungle"
+					this.lastModeSwitchTime = rawTime
+				}
 				this.targetPos = nearestSpot.pos
 
 				const neutralsInSpot = this.cachedCreeps.filter(
@@ -1297,15 +1321,25 @@ new (class JungleFarmScript {
 	}
 
 	private GetNearestEnabledSpot(hero: Unit): JungleSpot | null {
+		const rawTime = GameState.RawGameTime
 		const isFarmed = (spot: JungleSpot) => {
+			const occupiedUntil = this.occupiedSpots.get(spot.name) ?? 0
+			if (rawTime < occupiedUntil) return true
+
 			for (const h of this.cachedHeroes) {
 				if (h.Distance2D(spot.pos) < 600) {
 					const isAttackingCreep = h.IsAttacking && h.Target instanceof Creep
 					const hasFarmBuff = h.Buffs.some(b => /mask_of_madness|hand_of_midas|battlefury/.test(b.Name))
 					
 					if (isAttackingCreep || hasFarmBuff) {
-						if (this.skipIfAllyFarming.value && !h.IsEnemy(hero)) return true
-						if (this.skipIfEnemyFarming.value && h.IsEnemy(hero)) return true
+						if (this.skipIfAllyFarming.value && !h.IsEnemy(hero)) {
+							this.occupiedSpots.set(spot.name, rawTime + 7.0) // Запоминаем на 7 сек
+							return true
+						}
+						if (this.skipIfEnemyFarming.value && h.IsEnemy(hero)) {
+							this.occupiedSpots.set(spot.name, rawTime + 7.0) // Запоминаем на 7 сек
+							return true
+						}
 					}
 				}
 			}
