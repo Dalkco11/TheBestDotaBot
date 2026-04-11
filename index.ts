@@ -6,16 +6,13 @@ import {
 	EventsSDK,
 	Fountain,
 	GameState,
-	LifeState,
 	InputManager,
 	LocalPlayer,
-	MapArea,
 	Menu,
 	Player,
 	PlayerResource,
 	RendererSDK,
 	Rune,
-	TextFlags,
 	Tower,
 	Unit,
 	Team,
@@ -186,7 +183,6 @@ new (class JungleFarmScript {
 
 	private readonly testNode = this.entry.AddNode("Тест (Экспериментально)", "", "Функции для тестирования APM и скорости")
 	private readonly fastLogic = this.testNode.AddToggle("Быстрая логика", false, "Снижает задержку раздумий до 60мс (вместо 100мс)")
-	private readonly fastOrders = this.testNode.AddToggle("Быстрые приказы", false, "Снижает задержку между командами до 0.25с (вместо 0.3с)")
 	private readonly spamClick = this.testNode.AddToggle("Спам кликов", false, "Повторно отправлять команду атаки/движения (APM ~240)")
 	private readonly jitterMove = this.testNode.AddToggle("Джиттер-движение", false, "Микро-клики вокруг точки назначения (симуляция нервного игрока)")
 	private readonly experimentalOrbWalk = this.testNode.AddToggle("Orb-Walking", false, "Экспериментальная отмена анимации после выстрела/удара")
@@ -652,11 +648,30 @@ new (class JungleFarmScript {
 		const screenSize = RendererSDK.WindowSize
 
 		// Draw the main logo permanently right of the minimap
-		const imgWidth = 260
-		const imgHeight = 260
-		// Опускаем ниже: screenSize.y - imgHeight - 5 пикселей отступ снизу
-		const logoPos = new Vector2(280, screenSize.y - imgHeight - 5)
+		const imgWidth = 221
+		const imgHeight = 221
+		// Опускаем ниже и оставляем место под надпись
+		const logoPos = new Vector2(280, screenSize.y - imgHeight - 40)
+		
+		// Легкое свечение/фон для логотипа и текста
+		RendererSDK.FilledRect(logoPos.AddScalar(-5), new Vector2(imgWidth + 10, imgHeight + 35), new Color(0, 0, 0, 100))
+		RendererSDK.OutlinedRect(logoPos.AddScalar(-5), new Vector2(imgWidth + 10, imgHeight + 35), 1, new Color(255, 215, 0, 50))
+		
 		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
+		
+		// Золотая надпись BehUp.online с эффектом объема
+		const brandText = "BehUp.online"
+		const fontSize = 18
+		const textSize = RendererSDK.GetTextSize(brandText, "Roboto", fontSize, 400)
+		const textPos = new Vector2(
+			logoPos.x + (imgWidth - textSize.x) / 2,
+			logoPos.y + imgHeight + 5
+		)
+		
+		// Тень для текста
+		RendererSDK.Text(brandText, textPos.AddScalar(1), new Color(0, 0, 0, 255), "Roboto", fontSize, 800)
+		// Основной золотой текст
+		RendererSDK.Text(brandText, textPos, new Color(255, 215, 0), "Roboto", fontSize, 800)
 
 		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
 			const mouseWorld = InputManager.CursorOnWorld
@@ -781,7 +796,7 @@ new (class JungleFarmScript {
 
 			// Lock camera on hero using console command with active check
 			if (this.lockCamera.value && typeof Camera !== 'undefined' && typeof IOBuffer !== 'undefined' && IOBuffer !== null) {
-				const dummy = Camera.Position 
+					void Camera.Position // Touch to populate IOBuffer
 				if (typeof IOBuffer[0] === 'number') {
 					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
 					if (hero.Distance2D(camPos) > 100 || !this.lastCameraLock) {
@@ -1098,6 +1113,17 @@ new (class JungleFarmScript {
 
 	private AutoItems(hero: Unit): boolean {
 		if (this.currentStatus === "Возврат на базу" || this.currentStatus === "Побег от башни") return false
+		
+		// Экстренное исцеление (Лотосы, Сыр) - Самый высокий приоритет
+		if (this.autoLotus.value && hero.HPPercent < this.lotusHpThreshold.value) {
+			const healItem = hero.GetItemByName(/item_(healing_lotus|great_healing_lotus|greater_healing_lotus|famango|great_famango|greater_famango|cheese)/)
+			if (healItem?.IsReady) {
+				this.Log(`Использование ${healItem.Name.replace("item_", "")} на ${Math.floor(hero.HPPercent)}% ХП`)
+				hero.CastNoTarget(healItem, false, true)
+				this.lastOrderTime = GameState.RawGameTime
+				return true
+			}
+		}
 
 		if (this.usePhase.value && (hero.IsMoving || hero.IsAttacking)) {
 			const phase = hero.GetItemByName("item_phase_boots")
@@ -1143,14 +1169,6 @@ new (class JungleFarmScript {
 			}
 		}
 
-		if (this.autoLotus.value && hero.HPPercent < this.lotusHpThreshold.value) {
-			const lotus = hero.GetItemByName(/item_(healing_lotus|great_healing_lotus|greater_healing_lotus)/)
-			if (lotus?.IsReady) {
-				hero.CastNoTarget(lotus, false, true)
-				this.lastOrderTime = GameState.RawGameTime
-				return true
-			}
-		}
 		return false
 	}
 
