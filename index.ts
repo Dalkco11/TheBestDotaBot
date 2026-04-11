@@ -43,9 +43,35 @@ interface UnitState {
 	lastSpotArrivalTime: number
 	lastRandomWalkPos: Vector3 | undefined
 	lastRandomWalkPosUpdateTime: number
-	currentFarmMode: "lane" | "jungle" | "none"
+	currentFarmMode: "lane" | "jungle" | "none" | "lotus" | "wisdom"
 	lastModeSwitchTime: number
+	currentLotusSpot: LotusSpot | null
+	lotusArrivalTime: number
+	lastLotusPickCycle: number
+	currentWisdomSpot: WisdomSpot | null
+	wisdomArrivalTime: number
+	lastWisdomPickCycle: number
 }
+
+interface LotusSpot {
+	name: string
+	pos: Vector3
+}
+
+interface WisdomSpot {
+	name: string
+	pos: Vector3
+}
+
+const lotusSpots: LotusSpot[] = [
+	{ name: "Top Lotus Pool", pos: new Vector3(-7423, 4224, 128) },
+	{ name: "Bottom Lotus Pool", pos: new Vector3(7492, -4528, 128) }
+]
+
+const wisdomSpots: WisdomSpot[] = [
+	{ name: "Radiant Wisdom Pool", pos: new Vector3(-8077, 736, 16) },
+	{ name: "Dire Wisdom Pool", pos: new Vector3(8157, -1145, 16) }
+]
 
 const jungleSpots: JungleSpot[] = [
 	{ name: "diretoplinespotmalenkiy", pos: new Vector3(-3901, 4903, 128), team: Team.Dire },
@@ -123,6 +149,8 @@ new (class JungleFarmScript {
 	private readonly autoMidas = this.itemsNode.AddToggle("Hand of Midas", true)
 	private readonly useQuelling = this.itemsNode.AddToggle("Quelling Blade", true)
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
+	private readonly autoLotus = this.itemsNode.AddToggle("Использовать лотосы", true)
+	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 1)
 
 	private readonly abilitiesNode = this.autoNode.AddNode("Авто-способности")
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
@@ -131,6 +159,14 @@ new (class JungleFarmScript {
 	
 	private readonly illusionsNode = this.autoNode.AddNode("Иллюзии")
 	private readonly useIllusions = this.illusionsNode.AddToggle("Фарм иллюзиями", true, "Использовать иллюзии для фарма")
+	
+	private readonly lotusNode = this.entry.AddNode("Настройки Лотосов", "", "Автосбор лотосов каждые 3 минуты")
+	private readonly collectLotuses = this.lotusNode.AddToggle("Собирать лотосы", true, "Заходить в радиус лотос-пула каждые 3 минуты")
+	private readonly lotusPickRadius = this.lotusNode.AddSlider("Радиус активации", 1500, 500, 3000, 100, "Если бот пробегает в этом радиусе от пула, он зайдет за лотосом")
+	
+	private readonly wisdomNode = this.entry.AddNode("Настройки Опыта", "", "Автосбор бассейнов опыта каждые 7 минут")
+	private readonly collectWisdom = this.wisdomNode.AddToggle("Собирать опыт", true, "Заходить в радиус бассейна опыта каждые 7 минут")
+	private readonly wisdomPickRadius = this.wisdomNode.AddSlider("Радиус активации", 2500, 500, 4000, 100, "Если бот пробегает в этом радиусе от бассейна, он зайдет за опытом")
 	private readonly useTargetedHeroes = this.abilitiesNode.AddToggle("Цели: Вражеские герои", true)
 	private readonly useTargetedAllies = this.abilitiesNode.AddToggle("Цели: Союзники", true)
 	private readonly useTargetedSelf = this.abilitiesNode.AddToggle("Цели: На себя", true)
@@ -198,8 +234,14 @@ new (class JungleFarmScript {
 	private currentStatus = "Ожидание (Сброс)"
 	private targetPos: Vector3 | undefined
 	private currentJungleSpotName: string | null = null
-	private currentFarmMode: "lane" | "jungle" | "none" = "none"
+	private currentFarmMode: "lane" | "jungle" | "none" | "lotus" | "wisdom" = "none"
 	private lastModeSwitchTime = 0
+	private currentLotusSpot: LotusSpot | null = null
+	private lotusArrivalTime: number = 0
+	private lastLotusPickCycle: number = -1
+	private currentWisdomSpot: WisdomSpot | null = null
+	private wisdomArrivalTime: number = 0
+	private lastWisdomPickCycle: number = -1
 	private readonly occupiedSpots: Map<string, number> = new Map()
 	private lastCreepDeathPos: Vector3 | undefined
 	private lastRandomWalkPos: Vector3 | undefined
@@ -552,7 +594,13 @@ new (class JungleFarmScript {
 				lastRandomWalkPos: undefined,
 				lastRandomWalkPosUpdateTime: 0,
 				currentFarmMode: "none",
-				lastModeSwitchTime: 0
+				lastModeSwitchTime: 0,
+				currentLotusSpot: null,
+				lotusArrivalTime: 0,
+				lastLotusPickCycle: -1,
+				currentWisdomSpot: null,
+				wisdomArrivalTime: 0,
+				lastWisdomPickCycle: -1
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -567,6 +615,12 @@ new (class JungleFarmScript {
 		this.lastRandomWalkPosUpdateTime = state.lastRandomWalkPosUpdateTime
 		this.currentFarmMode = state.currentFarmMode
 		this.lastModeSwitchTime = state.lastModeSwitchTime
+		this.currentLotusSpot = state.currentLotusSpot
+		this.lotusArrivalTime = state.lotusArrivalTime
+		this.lastLotusPickCycle = state.lastLotusPickCycle
+		this.currentWisdomSpot = state.currentWisdomSpot
+		this.wisdomArrivalTime = state.wisdomArrivalTime
+		this.lastWisdomPickCycle = state.lastWisdomPickCycle
 	}
 
 	private SaveUnitState(unit: Unit): void {
@@ -583,6 +637,12 @@ new (class JungleFarmScript {
 			state.lastRandomWalkPosUpdateTime = this.lastRandomWalkPosUpdateTime
 			state.currentFarmMode = this.currentFarmMode
 			state.lastModeSwitchTime = this.lastModeSwitchTime
+			state.currentLotusSpot = this.currentLotusSpot
+			state.lotusArrivalTime = this.lotusArrivalTime
+			state.lastLotusPickCycle = this.lastLotusPickCycle
+			state.currentWisdomSpot = this.currentWisdomSpot
+			state.wisdomArrivalTime = this.wisdomArrivalTime
+			state.lastWisdomPickCycle = this.lastWisdomPickCycle
 		}
 	}
 
@@ -1189,6 +1249,15 @@ new (class JungleFarmScript {
 				}
 			}
 		}
+
+		if (this.autoLotus.value && hero.HPPercent < this.lotusHpThreshold.value) {
+			const lotus = hero.GetItemByName(/item_(healing_lotus|great_healing_lotus|greater_healing_lotus)/)
+			if (lotus?.IsReady) {
+				hero.CastNoTarget(lotus, false, true)
+				this.lastOrderTime = GameState.RawGameTime
+				return true
+			}
+		}
 		return false
 	}
 
@@ -1395,6 +1464,105 @@ new (class JungleFarmScript {
 					return true
 				}
 				this.isEscapingTower = false
+			}
+
+			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
+			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
+			if (this.collectLotuses.value && gameTime > 180) {
+				const cycle = Math.floor(gameTime / 180)
+				const window = 45 // 45 секунд после спавна пытаемся забрать
+				
+				if (gameTime % 180 < window) {
+					if (this.currentFarmMode === "lotus" && this.currentLotusSpot) {
+						const dist = hero.Distance2D(this.currentLotusSpot.pos)
+						this.targetPos = this.currentLotusSpot.pos
+						
+						if (dist > 100) {
+							this.setStatus(`Сбор лотоса: ${this.currentLotusSpot.name}`)
+							hero.MoveTo(this.currentLotusSpot.pos, false, true)
+							this.lastOrderTime = rawTime
+							this.lotusArrivalTime = 0
+							return true
+						} else {
+							if (this.lotusArrivalTime === 0) {
+								this.lotusArrivalTime = rawTime
+							}
+							
+							if (rawTime < this.lotusArrivalTime + 3.1) {
+								this.setStatus(`Ожидание лотоса (3 сек): ${Math.ceil(3.1 - (rawTime - this.lotusArrivalTime))}с`)
+								return true
+							} else {
+								this.Log(`Лотос собран в цикле ${cycle}`)
+								this.lastLotusPickCycle = cycle
+								this.currentFarmMode = "none"
+								this.currentLotusSpot = null
+								this.lotusArrivalTime = 0
+							}
+						}
+					} else if (this.lastLotusPickCycle < cycle) {
+						for (const spot of lotusSpots) {
+							if (hero.Distance2D(spot.pos) < this.lotusPickRadius.value) {
+								this.currentLotusSpot = spot
+								this.currentFarmMode = "lotus"
+								this.lastModeSwitchTime = rawTime
+								this.lotusArrivalTime = 0
+								return true
+							}
+						}
+					}
+				} else if (this.currentFarmMode === "lotus") {
+					this.currentFarmMode = "none"
+					this.currentLotusSpot = null
+				}
+			}
+
+			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
+			if (this.collectWisdom.value && gameTime > 420) {
+				const cycle = Math.floor(gameTime / 420)
+				const window = 60 // 1 минута после спавна пытаемся забрать
+				
+				if (gameTime % 420 < window) {
+					if (this.currentFarmMode === "wisdom" && this.currentWisdomSpot) {
+						const dist = hero.Distance2D(this.currentWisdomSpot.pos)
+						this.targetPos = this.currentWisdomSpot.pos
+						
+						if (dist > 100) {
+							this.setStatus(`Сбор опыта: ${this.currentWisdomSpot.name}`)
+							hero.MoveTo(this.currentWisdomSpot.pos, false, true)
+							this.lastOrderTime = rawTime
+							this.wisdomArrivalTime = 0
+							return true
+						} else {
+							if (this.wisdomArrivalTime === 0) {
+								this.wisdomArrivalTime = rawTime
+							}
+							
+							if (rawTime < this.wisdomArrivalTime + 4.1) {
+								this.setStatus(`Сбор опыта (4 сек): ${Math.ceil(4.1 - (rawTime - this.wisdomArrivalTime))}с`)
+								return true
+							} else {
+								this.Log(`Опыт собран в цикле ${cycle}`)
+								this.lastWisdomPickCycle = cycle
+								this.currentFarmMode = "none"
+								this.currentWisdomSpot = null
+								this.wisdomArrivalTime = 0
+							}
+						}
+					} else if (this.lastWisdomPickCycle < cycle) {
+						for (const spot of wisdomSpots) {
+							if (hero.Distance2D(spot.pos) < this.wisdomPickRadius.value) {
+								this.currentWisdomSpot = spot
+								this.currentFarmMode = "wisdom"
+								this.lastModeSwitchTime = rawTime
+								this.wisdomArrivalTime = 0
+								return true
+							}
+						}
+					}
+				} else if (this.currentFarmMode === "wisdom") {
+					this.currentFarmMode = "none"
+					this.currentWisdomSpot = null
+				}
 			}
 
 			if (this.pickAllRunes.value) {
