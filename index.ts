@@ -1684,7 +1684,9 @@ new (class JungleFarmScript {
 						c.IsSpawned &&
 						c.IsVisible &&
 						!c.IsPhantom &&
-						c.Distance2D(nearestSpot.pos) < 900 && // Увеличен радиус для поиска разбежавшихся крипов
+						!c.IsInvulnerable &&
+						c.Name.includes("neutral") &&
+						c.Distance2D(nearestSpot.pos) < 750 && // Уменьшен радиус, чтобы не цеплять чужие кемпы
 						!this.IsInTowerRange(c.Position, hero)
 				)
 
