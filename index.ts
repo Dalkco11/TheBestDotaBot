@@ -19,13 +19,30 @@ import {
 	Unit,
 	Team,
 	Vector2,
-	Vector3
+	Vector3,
+	DOTA_ABILITY_BEHAVIOR,
+	DOTA_UNIT_TARGET_TEAM,
+	DOTA_UNIT_TARGET_TYPE
 } from "github.com/octarine-public/wrapper/index"
 
 interface JungleSpot {
 	name: string
 	pos: Vector3
 	team: Team
+}
+
+interface UnitState {
+	lastOrderTime: number
+	nextOrderDelay: number
+	lastOrderWasAttack: boolean
+	currentStatus: string
+	targetPos: Vector3 | undefined
+	currentJungleSpotName: string | null
+	lastSpotArrivalTime: number
+	lastRandomWalkPos: Vector3 | undefined
+	lastRandomWalkPosUpdateTime: number
+	currentFarmMode: "lane" | "jungle" | "none"
+	lastModeSwitchTime: number
 }
 
 const jungleSpots: JungleSpot[] = [
@@ -95,7 +112,7 @@ new (class JungleFarmScript {
 	private readonly ignoreWolves = this.ignoreUnitsNode.AddToggle("Волки Люкана", true)
 	private readonly ignoreGolems = this.ignoreUnitsNode.AddToggle("Големы Варлока", true)
 	private readonly ignoreBeastmaster = this.ignoreUnitsNode.AddToggle("Бистмастер (Птица/кОбан)", true)
-	private readonly ignoreIllustions = this.ignoreUnitsNode.AddToggle("Все иллюзии", true)
+	private readonly ignoreIllusions = this.ignoreUnitsNode.AddToggle("Все иллюзии", true)
 
 	private readonly autoNode = this.entry.AddNode("Автоматизация", "", "Авто-предметы и способности")
 	private readonly itemsNode = this.autoNode.AddNode("Авто-предметы")
@@ -109,6 +126,12 @@ new (class JungleFarmScript {
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
 	private readonly useDamageAbilities = this.abilitiesNode.AddToggle("Урон", true)
 	private readonly aggressiveAbilities = this.abilitiesNode.AddToggle("Агрессивный режим", true)
+	
+	private readonly illusionsNode = this.autoNode.AddNode("Иллюзии")
+	private readonly useIllusions = this.illusionsNode.AddToggle("Фарм иллюзиями", true, "Использовать иллюзии для фарма")
+	private readonly useTargetedHeroes = this.abilitiesNode.AddToggle("Цели: Вражеские герои", true)
+	private readonly useTargetedAllies = this.abilitiesNode.AddToggle("Цели: Союзники", true)
+	private readonly useTargetedSelf = this.abilitiesNode.AddToggle("Цели: На себя", true)
 	private readonly manaThreshold = this.abilitiesNode.AddSlider("Мин. мана %", 30, 0, 100, 1)
 	private readonly enabledSpells: Map<string, Menu.Toggle> = new Map()
 	private readonly spellsWhitelistNode = this.abilitiesNode.AddNode("Белый список")
@@ -190,6 +213,9 @@ new (class JungleFarmScript {
 	private readonly failedAbilities: Set<string> = new Set()
 	private isEscapingTower = false
 	private lastTpTime = 0
+	
+	private unitStates: Map<number, UnitState> = new Map()
+	
 	private readonly logBuffer: string[] = []
 	private readonly maxLogLines = 15
 
@@ -249,7 +275,7 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private Log(message: string): void {
+	private Log(message: string, unit?: Unit): void {
 		let timeStr = "0.00"
 		try {
 			if (typeof GameState !== 'undefined' && GameState.RawGameTime !== undefined) {
@@ -259,7 +285,8 @@ new (class JungleFarmScript {
 			// Fallback if GameState is not ready
 		}
 		
-		const formatted = `[${timeStr}] ${message}`
+		const prefix = unit ? `[${unit.Name.replace("npc_dota_hero_", "").replace("npc_dota_", "")}] ` : ""
+		const formatted = `[${timeStr}] ${prefix}${message}`
 		
 		this.logBuffer.push(formatted)
 		if (this.logBuffer.length > this.maxLogLines) {
@@ -505,6 +532,55 @@ new (class JungleFarmScript {
 		
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
+		this.unitStates.clear()
+	}
+
+	private LoadUnitState(unit: Unit): void {
+		let state = this.unitStates.get(unit.Index)
+		if (!state) {
+			state = {
+				lastOrderTime: 0,
+				nextOrderDelay: 0.3,
+				lastOrderWasAttack: false,
+				currentStatus: "Ожидание",
+				targetPos: undefined,
+				currentJungleSpotName: null,
+				lastSpotArrivalTime: 0,
+				lastRandomWalkPos: undefined,
+				lastRandomWalkPosUpdateTime: 0,
+				currentFarmMode: "none",
+				lastModeSwitchTime: 0
+			}
+			this.unitStates.set(unit.Index, state)
+		}
+		this.lastOrderTime = state.lastOrderTime
+		this.nextOrderDelay = state.nextOrderDelay
+		this.lastOrderWasAttack = state.lastOrderWasAttack
+		this.currentStatus = state.currentStatus
+		this.targetPos = state.targetPos
+		this.currentJungleSpotName = state.currentJungleSpotName
+		this.lastSpotArrivalTime = state.lastSpotArrivalTime
+		this.lastRandomWalkPos = state.lastRandomWalkPos
+		this.lastRandomWalkPosUpdateTime = state.lastRandomWalkPosUpdateTime
+		this.currentFarmMode = state.currentFarmMode
+		this.lastModeSwitchTime = state.lastModeSwitchTime
+	}
+
+	private SaveUnitState(unit: Unit): void {
+		const state = this.unitStates.get(unit.Index)
+		if (state) {
+			state.lastOrderTime = this.lastOrderTime
+			state.nextOrderDelay = this.nextOrderDelay
+			state.lastOrderWasAttack = this.lastOrderWasAttack
+			state.currentStatus = this.currentStatus
+			state.targetPos = this.targetPos
+			state.currentJungleSpotName = this.currentJungleSpotName
+			state.lastSpotArrivalTime = this.lastSpotArrivalTime
+			state.lastRandomWalkPos = this.lastRandomWalkPos
+			state.lastRandomWalkPosUpdateTime = this.lastRandomWalkPosUpdateTime
+			state.currentFarmMode = this.currentFarmMode
+			state.lastModeSwitchTime = this.lastModeSwitchTime
+		}
 	}
 
 	private OnGameEvent(eventName: string, obj: any): void {
@@ -681,17 +757,33 @@ new (class JungleFarmScript {
 			}
 
 			// Run logic on Draw frame but throttle it
-			const throttle = this.fastLogic.value ? 0.06 : 0.1
+			const throttle = this.fastLogic.value ? 0.05 : 0.1
 			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
-				if (this.autoLeveling.value) {
-					this.HandleAutoLeveling(hero)
-				}
+				const playerID = LocalPlayer?.PlayerID
+				if (playerID !== undefined) {
+					const myUnits = EntityManager.GetEntitiesByClass(Unit).filter(u => 
+						u.IsAlive && u.IsControllableByPlayerMask !== 0n && (u.IsControllableByPlayerMask & (1n << BigInt(playerID))) !== 0n
+					)
 
-				const abilitySent = this.AutoAbilities(hero)
-				const itemSent = this.AutoItems(hero)
-				
-				if (!abilitySent && !itemSent) {
-					this.OnUpdate(hero)
+					for (const u of myUnits) {
+						if (!u.IsHero && !u.IsIllusion) continue
+						if (u.IsIllusion && !this.useIllusions.value) continue
+
+						this.LoadUnitState(u)
+
+						if (u.IsHero && !u.IsIllusion && this.autoLeveling.value) {
+							this.HandleAutoLeveling(u)
+						}
+
+						const abilitySent = this.AutoAbilities(u)
+						const itemSent = this.AutoItems(u)
+						
+						if (!abilitySent && !itemSent) {
+							this.OnUpdate(u)
+						}
+
+						this.SaveUnitState(u)
+					}
 				}
 				
 				this.lastLogicTime = GameState.RawGameTime
@@ -766,18 +858,33 @@ new (class JungleFarmScript {
 				}
 			}
 
-			const statusText = `Статус: ${this.currentStatus} | Пустые лагеря: ${this.emptySpots.size}/${jungleSpots.length}`
+			let yOffset = 200
+			const commonStatus = `Пустые лагеря: ${this.emptySpots.size}/${jungleSpots.length}`
+			RendererSDK.Text(commonStatus, new Vector2(200, yOffset), Color.White, "Roboto", 20)
+			yOffset += 30
+
+			for (const [index, state] of this.unitStates) {
+				const unit = EntityManager.EntityByIndex(index) as Unit
+				if (!unit || !unit.IsAlive) continue
+				
+				const isMainHero = unit.IsHero && !unit.IsIllusion
+				const unitNameDisplay = isMainHero ? "Герой" : "Иллюзия"
+				const color = isMainHero ? Color.White : Color.Gray.SetA(200)
+				const unitStatus = `[${unitNameDisplay}] ${state.currentStatus}`
+				RendererSDK.Text(unitStatus, new Vector2(200, yOffset), color, "Roboto", 16)
+				yOffset += 20
+			}
+
 			const teamText = `Команда: ${hero.Team === Team.Radiant ? "Свет" : hero.Team === Team.Dire ? "Тьма" : "Неизвестно"} | Только свой лес: ${this.ownJungleOnly.value ? "Да" : "Нет"}`
 			const targetEnt = hero.Target
 			const targetText = `Цель: ${targetEnt?.Name ?? "Нет"} [ID: ${hero.TargetIndex_}] | Атакует: ${hero.IsAttacking ? "Да" : "Нет"}`
 			const pointsText = `Очки способностей: ${hero.AbilityPoints} | Уровень: ${hero.Level}`
 			const stateText = `Скрипт ${this.state.value ? "ВКЛЮЧЕН" : "ВЫКЛЮЧЕН"}`
 
-			RendererSDK.Text(statusText, new Vector2(200, 200), Color.White, "Roboto", 20)
-			RendererSDK.Text(teamText, new Vector2(200, 230), Color.White, "Roboto", 20)
-			RendererSDK.Text(targetText, new Vector2(200, 260), Color.White, "Roboto", 20)
-			RendererSDK.Text(pointsText, new Vector2(200, 290), Color.Yellow, "Roboto", 20)
-			RendererSDK.Text(stateText, new Vector2(200, 320), this.state.value ? Color.Green : Color.Red, "Roboto", 20)
+			RendererSDK.Text(teamText, new Vector2(200, yOffset + 10), Color.White, "Roboto", 20)
+			RendererSDK.Text(targetText, new Vector2(200, yOffset + 40), Color.White, "Roboto", 20)
+			RendererSDK.Text(pointsText, new Vector2(200, yOffset + 70), Color.Yellow, "Roboto", 20)
+			RendererSDK.Text(stateText, new Vector2(200, yOffset + 100), this.state.value ? Color.Green : Color.Red, "Roboto", 20)
 
 			if (this.showGameTimer.value) {
 				const time = Math.floor(GameState.RawGameTime)
@@ -1044,59 +1151,151 @@ new (class JungleFarmScript {
 	}
 
 	private AutoAbilities(hero: Unit): boolean {
-		if (hero.ManaPercent < this.manaThreshold.value) return false
+		const manaPercentThreshold = this.manaThreshold.value
+		if (hero.ManaPercent < manaPercentThreshold) return false
 
-		const target = hero.Target
-		const hasTarget = target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 800
-
+		// Обновляем белый список способностей
 		for (const s of hero.Spells) {
-			if (s && s.Level > 0 && !s.IsPassive && !s.IsHidden && !s.IsInnate && !s.Name.includes("special_bonus") && !this.enabledSpells.has(s.Name)) {
+			if (s && s.Level > 0 && s.IsActivated && !s.IsPassive && !s.IsHidden && !s.IsInnate && !s.Name.includes("special_bonus") && !this.enabledSpells.has(s.Name)) {
 				this.enabledSpells.set(s.Name, this.spellsWhitelistNode.AddToggle(s.Name, true))
 			}
 		}
 
+		const spells = hero.Spells.filter((s): s is Ability => 
+			s !== undefined && 
+			s.Level > 0 && 
+			s.IsActivated &&
+			s.IsReady && 
+			!s.IsNotLearnable &&
+			!s.IsPassive &&
+			!s.IsHidden &&
+			this.enabledSpells.get(s.Name)?.value === true
+		)
+
+		if (spells.length === 0) return false
+
+		const target = hero.Target
+		const isAttackingCreep = target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 1000
+
+		// Блинк/Лип для движения
 		if (this.useMovementAbilities.value && this.targetPos && hero.Distance2D(this.targetPos) > 800) {
-			const blink = hero.Spells.find((s): s is Ability => s !== undefined && s.Level > 0 && s.IsReady && (s.Name.includes("blink") || s.Name.includes("time_walk")))
-			if (blink && this.enabledSpells.get(blink.Name)?.value) {
+			const blink = spells.find(s => s.Name.includes("blink") || s.Name.includes("time_walk") || s.Name.includes("leap"))
+			if (blink) {
 				hero.CastPosition(blink, this.targetPos, false, true)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
 		}
 
-		if (this.useDamageAbilities.value && hero.IsAttacking && hasTarget) {
-			const spells = hero.Spells.filter((s): s is Ability => 
-				s !== undefined && 
-				s.Level > 0 && 
-				s.IsReady && 
-				!s.IsPassive &&
-				!s.IsHidden &&
-				!s.IsInnate &&
-				!s.Name.includes("blink") && 
-				!s.Name.includes("time_walk") &&
-				!s.Name.includes("special_bonus") &&
-				!s.Name.includes("guild_banner") &&
-				!s.Name.includes("high_five") &&
-				s.ManaCost <= hero.Mana && 
-				this.enabledSpells.get(s.Name)?.value !== false
-			)
+		for (const spell of spells) {
+			const behavior = spell.AbilityBehaviorMask
+			const isNoTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_NO_TARGET) !== 0n
+			const isUnitTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_UNIT_TARGET) !== 0n
+			const isPoint = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_POINT) !== 0n
+			const isToggle = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_TOGGLE) !== 0n
 
-			if (this.aggressiveAbilities.value) {
-				let sent = false
-				for (const damageSpell of spells) {
-					hero.UseSmartAbility(damageSpell, target as Creep, false, false, false, true)
+			if (isToggle) {
+				if (!spell.IsToggled && isAttackingCreep) {
+					spell.UseAbility(undefined, false, true)
 					this.lastOrderTime = GameState.RawGameTime
-					sent = true
+					return true
 				}
-				return sent
-			} else if (spells.length > 0) {
-				const damageSpell = spells[0]
-				hero.UseSmartAbility(damageSpell, target as Creep, false, false, false, true)
-				this.lastOrderTime = GameState.RawGameTime
-				return true
+				continue
+			}
+
+			if (isNoTarget) {
+				if (this.useDamageAbilities.value && isAttackingCreep) {
+					spell.UseAbility()
+					this.lastOrderTime = GameState.RawGameTime
+					if (!this.aggressiveAbilities.value) return true
+				}
+				continue
+			}
+
+			if (isUnitTarget) {
+				const bestTarget = this.GetBestTargetForAbility(hero, spell)
+				if (bestTarget) {
+					spell.UseAbility(bestTarget)
+					this.lastOrderTime = GameState.RawGameTime
+					if (!this.aggressiveAbilities.value) return true
+				}
+			}
+
+			if (isPoint && isAttackingCreep) {
+				if (this.useDamageAbilities.value) {
+					spell.UseAbility(target.Position)
+					this.lastOrderTime = GameState.RawGameTime
+					if (!this.aggressiveAbilities.value) return true
+				}
 			}
 		}
+
 		return false
+	}
+
+	private GetBestTargetForAbility(hero: Unit, ability: Ability): Unit | undefined {
+		const teamMask = ability.TargetTeamMask
+		const typeMask = ability.TargetTypeMask
+		const range = ability.CastRange + 150 // Буфер
+
+		// Враги
+		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_ENEMY) !== 0n || 
+			(teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_BOTH) !== 0n) {
+			
+			// Приоритет героям
+			if (this.useTargetedHeroes.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
+				const enemyHero = this.cachedHeroes.find(h => 
+					h.IsEnemy(hero) && h.IsAlive && h.IsVisible && 
+					hero.Distance2D(h) < range && 
+					(!h.IsMagicImmune || ability.CanHitSpellImmuneEnemy)
+				)
+				if (enemyHero) return enemyHero
+			}
+
+			// Крипы
+			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n || 
+				(typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_BASIC) !== 0n) {
+				const creep = this.cachedCreeps.find(c => 
+					c.IsEnemy(hero) && c.IsAlive && c.IsVisible && 
+					hero.Distance2D(c) < range && 
+					(!c.IsMagicImmune || ability.CanHitSpellImmuneEnemy) &&
+					!this.IsIgnoredUnit(c)
+				)
+				if (creep) return creep
+			}
+		}
+
+		// Союзники и Селф
+		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_FRIENDLY) !== 0n || 
+			(teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_BOTH) !== 0n) {
+			
+			// Сами на себя (если бафф или хилл)
+			if (this.useTargetedSelf.value) {
+				const isLowHp = hero.HPPercent < 50
+				const isLowMana = hero.ManaPercent < 30
+				const isRestore = ability.IsHealthRestore() || ability.IsManaRestore()
+				const isBuff = ability.IsBuff() || ability.IsShield()
+
+				if ((isRestore && (isLowHp || isLowMana)) || isBuff) {
+					if (!hero.Buffs.some(b => b.Name === ability.Name)) {
+						return hero
+					}
+				}
+			}
+
+			// Другие союзники
+			if (this.useTargetedAllies.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
+				const allyHero = this.cachedHeroes.find(h => 
+					!h.IsEnemy(hero) && h !== hero && h.IsAlive && h.IsVisible && 
+					hero.Distance2D(h) < range && 
+					(!h.IsMagicImmune || ability.CanHitSpellImmuneAlly) &&
+					(h.HPPercent < 60 || ability.IsBuff()) // Упрощенное условие для союзников
+				)
+				if (allyHero) return allyHero
+			}
+		}
+
+		return undefined
 	}
 
 	private GoToFountain(hero: Unit): void {
@@ -1344,7 +1543,8 @@ new (class JungleFarmScript {
 						c.IsAlive &&
 						c.IsSpawned &&
 						c.IsVisible &&
-						c.Distance2D(nearestSpot.pos) < 600 &&
+						!c.IsPhantom &&
+						c.Distance2D(nearestSpot.pos) < 900 && // Увеличен радиус для поиска разбежавшихся крипов
 						!this.IsInTowerRange(c.Position, hero)
 				)
 
@@ -1356,7 +1556,7 @@ new (class JungleFarmScript {
 					this.targetPos = neutral.Position
 
 					const isAttackingSame = hero.TargetIndex_ === neutral.Index
-					if (!isAttackingSame || this.spamClick.value) {
+					if ((!isAttackingSame || this.spamClick.value) && neutral.IsAlive && neutral.IsVisible) {
 						const movePos = this.GetSafeMovePos(hero.Position, neutral.Position, hero)
 						if (movePos.Distance2D(neutral.Position) > 100) {
 							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
@@ -1389,12 +1589,12 @@ new (class JungleFarmScript {
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				} else {
-					// Мы в радиусе спота. Даем 1 секунду на "прогрузку" крипов
+					// Мы в радиусе спота. Даем 1.5 секунды на "прогрузку" крипов или их возвращение
 					if (this.lastSpotArrivalTime === 0) {
 						this.lastSpotArrivalTime = rawTime
 					}
 
-					if (rawTime < this.lastSpotArrivalTime + 0.25) {
+					if (rawTime < this.lastSpotArrivalTime + 1.5) {
 						this.setStatus(`Проверка спота: ${nearestSpot.name}`)
 						return true
 					}
@@ -1546,15 +1746,16 @@ new (class JungleFarmScript {
 				const isNotNeutral = !c.IsNeutral
 				const isAlive = c.IsAlive
 				const isVisible = c.IsVisible
+				const isNotPhantom = !c.IsPhantom
 				const dist = hero.Distance2D(c)
 				const distValid = dist < maxDist
 				const midValid = !this.ignoreMid.value || !this.IsMidLane(c.Position)
 				const notIgnored = !this.IsIgnoredUnit(c)
 
-				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && distValid && midValid && notIgnored
+				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && isNotPhantom && distValid && midValid && notIgnored
 
 				if (this.detailedDebug.value && !allValid && dist < 3000) {
-					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} D:${distValid} M:${midValid} I:${notIgnored}`)
+					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} P:${isNotPhantom} D:${distValid} M:${midValid} I:${notIgnored}`)
 				}
 
 				return allValid
@@ -1577,7 +1778,7 @@ new (class JungleFarmScript {
 		if (this.ignoreWolves.value && name.includes("_wolf")) return true
 		if (this.ignoreGolems.value && name.includes("_golem")) return true
 		if (this.ignoreBeastmaster.value && (name.includes("beastmaster_hawk") || name.includes("beastmaster_boar"))) return true
-		if (this.ignoreIllustions.value && unit.IsIllusion) return true
+		if (this.ignoreIllusions.value && unit.IsIllusion) return true
 		return false
 	}
 
