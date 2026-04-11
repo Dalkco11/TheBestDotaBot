@@ -280,6 +280,7 @@ new (class JungleFarmScript {
 	private lastHeroAttackerTime: number = 0
 	private lastLeveledAbilityPoints: number = 0
 	private readonly failedAbilities: Set<string> = new Set()
+	private readonly failedActions: Map<string, number> = new Map()
 	private isEscapingTower = false
 	private lastTpTime = 0
 	
@@ -1131,9 +1132,10 @@ new (class JungleFarmScript {
 		// Экстренное исцеление (Лотосы, Сыр) - Самый высокий приоритет
 		if (this.autoLotus.value && hero.HPPercent < this.lotusHpThreshold.value) {
 			const healItem = hero.GetItemByName(/item_(healing_lotus|great_healing_lotus|greater_healing_lotus|famango|great_famango|greater_famango|cheese)/)
-			if (healItem?.IsReady) {
+			if (healItem?.IsReady && (!this.failedActions.has(healItem.Name) || this.failedActions.get(healItem.Name)! <= GameState.RawGameTime)) {
 				this.Log(`Использование ${healItem.Name.replace("item_", "")} на ${Math.floor(hero.HPPercent)}% ХП`)
 				hero.CastNoTarget(healItem, false, true)
+				this.failedActions.set(healItem.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
@@ -1141,8 +1143,9 @@ new (class JungleFarmScript {
 
 		if (this.usePhase.value && (hero.IsMoving || hero.IsAttacking)) {
 			const phase = hero.GetItemByName("item_phase_boots")
-			if (phase?.IsReady) {
+			if (phase?.IsReady && (!this.failedActions.has(phase.Name) || this.failedActions.get(phase.Name)! <= GameState.RawGameTime)) {
 				hero.CastNoTarget(phase, false, true)
+				this.failedActions.set(phase.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
@@ -1150,8 +1153,9 @@ new (class JungleFarmScript {
 
 		if (this.useMom.value && hero.IsAttacking && (this.currentStatus === "Фарм леса" || this.currentStatus === "Фарм линии")) {
 			const mom = hero.GetItemByName("item_mask_of_madness")
-			if (mom?.IsReady) {
+			if (mom?.IsReady && (!this.failedActions.has(mom.Name) || this.failedActions.get(mom.Name)! <= GameState.RawGameTime)) {
 				hero.CastNoTarget(mom, false, true)
+				this.failedActions.set(mom.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
@@ -1159,12 +1163,13 @@ new (class JungleFarmScript {
 
 		if (this.autoMidas.value) {
 			const midas = hero.GetItemByName("item_hand_of_midas")
-			if (midas?.IsReady) {
+			if (midas?.IsReady && (!this.failedActions.has(midas.Name) || this.failedActions.get(midas.Name)! <= GameState.RawGameTime)) {
 				const target = this.cachedCreeps.find(
-					c => c.IsEnemy(hero) && c.IsNeutral && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 600
+					c => c.IsEnemy(hero) && c.IsNeutral && c.IsAlive && c.IsVisible && !c.IsInvulnerable && c.Name.includes("neutral") && hero.Distance2D(c) < 600
 				)
 				if (target) {
 					hero.CastTarget(midas, target, false, true)
+					this.failedActions.set(midas.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				}
@@ -1175,8 +1180,9 @@ new (class JungleFarmScript {
 			const quelling = hero.GetItemByName(/item_quelling_blade|item_bfury/)
 			if (quelling?.IsReady) {
 				const target = hero.Target
-				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
+				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600 && (!this.failedActions.has(quelling.Name) || this.failedActions.get(quelling.Name)! <= GameState.RawGameTime)) {
 					hero.CastTarget(quelling, target, false, true)
+					this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				}
@@ -1216,14 +1222,17 @@ new (class JungleFarmScript {
 		// Блинк/Лип для движения
 		if (this.useMovementAbilities.value && this.targetPos && hero.Distance2D(this.targetPos) > 800) {
 			const blink = spells.find(s => s.Name.includes("blink") || s.Name.includes("time_walk") || s.Name.includes("leap"))
-			if (blink) {
+			if (blink && (!this.failedActions.has(blink.Name) || this.failedActions.get(blink.Name)! <= GameState.RawGameTime)) {
 				hero.CastPosition(blink, this.targetPos, false, true)
+				this.failedActions.set(blink.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
 		}
 
 		for (const spell of spells) {
+			if (this.failedActions.has(spell.Name) && this.failedActions.get(spell.Name)! > GameState.RawGameTime) continue
+
 			const behavior = spell.AbilityBehaviorMask
 			const isNoTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_NO_TARGET) !== 0n
 			const isUnitTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_UNIT_TARGET) !== 0n
@@ -1233,6 +1242,7 @@ new (class JungleFarmScript {
 			if (isToggle) {
 				if (!spell.IsToggled && isAttackingCreep) {
 					spell.UseAbility(undefined, false, true)
+					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				}
@@ -1242,6 +1252,7 @@ new (class JungleFarmScript {
 			if (isNoTarget) {
 				if (this.useDamageAbilities.value && isAttackingCreep) {
 					spell.UseAbility()
+					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					if (!this.aggressiveAbilities.value) return true
 				}
@@ -1252,6 +1263,7 @@ new (class JungleFarmScript {
 				const bestTarget = this.GetBestTargetForAbility(hero, spell)
 				if (bestTarget) {
 					spell.UseAbility(bestTarget)
+					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					if (!this.aggressiveAbilities.value) return true
 				}
@@ -1260,6 +1272,7 @@ new (class JungleFarmScript {
 			if (isPoint && isAttackingCreep) {
 				if (this.useDamageAbilities.value) {
 					spell.UseAbility(target.Position)
+					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
 					if (!this.aggressiveAbilities.value) return true
 				}
@@ -1281,7 +1294,7 @@ new (class JungleFarmScript {
 			// Приоритет героям
 			if (this.useTargetedHeroes.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
 				const enemyHero = this.cachedHeroes.find(h => 
-					h.IsEnemy(hero) && h.IsAlive && h.IsVisible && 
+					h.IsEnemy(hero) && h.IsAlive && h.IsVisible && !h.IsInvulnerable &&
 					hero.Distance2D(h) < range && 
 					(!h.IsMagicImmune || ability.CanHitSpellImmuneEnemy)
 				)
@@ -1292,7 +1305,7 @@ new (class JungleFarmScript {
 			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n || 
 				(typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_BASIC) !== 0n) {
 				const creep = this.cachedCreeps.find(c => 
-					c.IsEnemy(hero) && c.IsAlive && c.IsVisible && 
+					c.IsEnemy(hero) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
 					hero.Distance2D(c) < range && 
 					(!c.IsMagicImmune || ability.CanHitSpellImmuneEnemy) &&
 					!this.IsIgnoredUnit(c)
@@ -1322,7 +1335,7 @@ new (class JungleFarmScript {
 			// Другие союзники
 			if (this.useTargetedAllies.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
 				const allyHero = this.cachedHeroes.find(h => 
-					!h.IsEnemy(hero) && h !== hero && h.IsAlive && h.IsVisible && 
+					!h.IsEnemy(hero) && h !== hero && h.IsAlive && h.IsVisible && !h.IsInvulnerable &&
 					hero.Distance2D(h) < range && 
 					(!h.IsMagicImmune || ability.CanHitSpellImmuneAlly) &&
 					(h.HPPercent < 60 || ability.IsBuff()) // Упрощенное условие для союзников
@@ -1907,12 +1920,13 @@ new (class JungleFarmScript {
 				const isAlive = c.IsAlive
 				const isVisible = c.IsVisible
 				const isNotPhantom = !c.IsPhantom
+				const isNotInvulnerable = !c.IsInvulnerable
 				const dist = hero.Distance2D(c)
 				const distValid = dist < maxDist
 				const midValid = !this.ignoreMid.value || !this.IsMidLane(c.Position)
 				const notIgnored = !this.IsIgnoredUnit(c)
 
-				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && isNotPhantom && distValid && midValid && notIgnored
+				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && isNotPhantom && isNotInvulnerable && distValid && midValid && notIgnored
 
 				if (this.detailedDebug.value && !allValid && dist < 3000) {
 					this.Log(`Крип ${c.Name} [${c.Index}] [Team:${c.Team}] отклонен: E:${isEnemy} N:${isNotNeutral} A:${isAlive} V:${isVisible} P:${isNotPhantom} D:${distValid} M:${midValid} I:${notIgnored}`)
@@ -1943,6 +1957,8 @@ new (class JungleFarmScript {
 					c.IsNeutral && 
 					c.IsVisible && 
 					!c.IsPhantom &&
+					!c.IsInvulnerable &&
+					c.Name.includes("neutral") &&
 					c.Distance2D(spot.pos) < 900
 				)
 				
