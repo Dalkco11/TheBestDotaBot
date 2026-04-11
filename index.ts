@@ -628,6 +628,26 @@ new (class JungleFarmScript {
 				}
 				this.lastLaneCreepVisibleTime = GameState.RawGameTime
 			}
+
+			// Мгновенная очистка спота при смерти нейтрала
+			if (hero && victim instanceof Creep && victim.IsNeutral && victim.IsVisible) {
+				const nearestSpot = jungleSpots.slice().sort((a, b) => victim.Distance2D(a.pos) - victim.Distance2D(b.pos))[0]
+				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 900) {
+					// Проверка: остались ли еще живые нейтралы в этом споте
+					const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).find(c => 
+						c !== victim && 
+						c.IsAlive && 
+						c.IsNeutral && 
+						c.IsVisible && 
+						!c.IsPhantom &&
+						c.Distance2D(nearestSpot.pos) < 900
+					)
+					if (!otherNeutrals) {
+						this.emptySpots.add(nearestSpot.name)
+						this.Log(`Спот ${nearestSpot.name} зафармлен (мгновенно)`, hero)
+					}
+				}
+			}
 		}
 	}
 
@@ -935,6 +955,9 @@ new (class JungleFarmScript {
 				this.HandlePanorama(hero)
 				this.lastPanoramaTime = rawTime
 			}
+
+			// Глобальное отслеживание фарма союзников
+			this.TrackGlobalJungleStatus(hero)
 
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
 			const currentMinute = Math.floor(gameTime / 60)
@@ -1608,12 +1631,12 @@ new (class JungleFarmScript {
 					this.lastOrderTime = GameState.RawGameTime
 					return true
 				} else {
-					// Мы в радиусе спота. Даем 1.5 секунды на "прогрузку" крипов или их возвращение
+					// Мы в радиусе спота. Даем 0.4 секунды на "прогрузку" крипов или их возвращение
 					if (this.lastSpotArrivalTime === 0) {
 						this.lastSpotArrivalTime = rawTime
 					}
 
-					if (rawTime < this.lastSpotArrivalTime + 1.5) {
+					if (rawTime < this.lastSpotArrivalTime + 0.4) {
 						this.setStatus(`Проверка спота: ${nearestSpot.name}`)
 						return true
 					}
@@ -1786,6 +1809,31 @@ new (class JungleFarmScript {
 		}
 
 		return creeps.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
+	}
+
+	private TrackGlobalJungleStatus(hero: Unit): void {
+		const allies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && !h.IsIllusion)
+		
+		for (const spot of jungleSpots) {
+			if (this.emptySpots.has(spot.name)) continue
+			
+			const nearestAlly = allies.find(a => a.Distance2D(spot.pos) < 600)
+			if (nearestAlly) {
+				// Если союзник на споте, проверяем наличие крипов
+				const neutrals = this.cachedCreeps.filter(c => 
+					c.IsAlive && 
+					c.IsNeutral && 
+					c.IsVisible && 
+					!c.IsPhantom &&
+					c.Distance2D(spot.pos) < 900
+				)
+				
+				if (neutrals.length === 0) {
+					this.emptySpots.add(spot.name)
+					this.Log(`Спот ${spot.name} отмечен как пустой (союзник: ${nearestAlly.Name.replace("npc_dota_hero_", "")})`)
+				}
+			}
+		}
 	}
 
 	private IsIgnoredUnit(unit: Unit): boolean {
