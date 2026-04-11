@@ -7,6 +7,7 @@ import {
 	Fountain,
 	GameState,
 	LifeState,
+	InputManager,
 	LocalPlayer,
 	MapArea,
 	Menu,
@@ -18,6 +19,7 @@ import {
 	Tower,
 	Unit,
 	Team,
+	GameRules,
 	Vector2,
 	Vector3,
 	DOTA_ABILITY_BEHAVIOR,
@@ -171,6 +173,7 @@ new (class JungleFarmScript {
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
+	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
@@ -682,6 +685,19 @@ new (class JungleFarmScript {
 			RendererSDK.Text(line, new Vector2(notifBackgroundPosX + notificationMargin + (notificationWidth - notificationMargin * 2 - RendererSDK.GetTextSize(line, notificationFont, notificationTextSize, notificationWidth).x) / 2, textDrawPosY), notificationTextColor.SetA(this.currentNotificationAlpha), notificationFont, notificationTextSize)
 		}
 
+		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
+			const mouseWorld = InputManager.CursorOnWorld
+			const text = `Mouse World: ${Math.floor(mouseWorld.x)}, ${Math.floor(mouseWorld.y)}, ${Math.floor(mouseWorld.z)}`
+			
+			// Позиция под уведомлениями
+			const posX = screenSize.x - notificationWidth - notificationMargin
+			const posY = notifBackgroundPosY + notificationHeight + 10
+			
+			RendererSDK.FilledRect(new Vector2(posX, posY), new Vector2(notificationWidth, 30), new Color(0, 0, 0, 150))
+			RendererSDK.OutlinedRect(new Vector2(posX, posY), new Vector2(notificationWidth, 30), 1, new Color(255, 255, 255, 50))
+			RendererSDK.Text(text, new Vector2(posX + 10, posY + 5), Color.Yellow, "Roboto", 16)
+		}
+
 
 
 		// Original content of OnDraw starts here
@@ -741,7 +757,8 @@ new (class JungleFarmScript {
 			}
 
 			// Auto-enable logic
-			if (!this.state.value && this.autoEnable.value && GameState.RawGameTime >= this.autoEnableTime.value * 60) {
+			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
+			if (!this.state.value && this.autoEnable.value && gameTime >= this.autoEnableTime.value * 60) {
 				this.state.value = true
 				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин)`)
 			}
@@ -887,7 +904,7 @@ new (class JungleFarmScript {
 			RendererSDK.Text(stateText, new Vector2(200, yOffset + 100), this.state.value ? Color.Green : Color.Red, "Roboto", 20)
 
 			if (this.showGameTimer.value) {
-				const time = Math.floor(GameState.RawGameTime)
+				const time = Math.floor(GameState.RawGameTime - (GameRules?.GameStartTime ?? 0))
 				const absTime = Math.abs(time)
 				const mins = Math.floor(absTime / 60)
 				const secs = absTime % 60
@@ -919,12 +936,14 @@ new (class JungleFarmScript {
 				this.lastPanoramaTime = rawTime
 			}
 
-			const currentMinute = Math.floor(rawTime / 60)
+			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
+			const currentMinute = Math.floor(gameTime / 60)
 			
 			if (this.lastMinute === -1) this.lastMinute = currentMinute
 			if (currentMinute !== this.lastMinute) {
 				this.emptySpots.clear()
 				this.lastMinute = currentMinute
+				this.Log(`Минута прошла (${currentMinute}:00), сбрасываю пустые лагеря`)
 			}
 
 			if (this.ignoreHeroes.value && hero.IsAttacking) {
