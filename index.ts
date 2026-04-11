@@ -85,16 +85,16 @@ const jungleSpots: JungleSpot[] = [
 	{ name: "Rad Bot (Medium #1)", pos: new Vector3(1894, -4077, 256), team: Team.Radiant, type: CampType.Medium },
 	{ name: "Rad Bot (Medium #2)", pos: new Vector3(-2421, -8353, 128), team: Team.Radiant, type: CampType.Medium },
 	{ name: "Rad Bot (Large #2)", pos: new Vector3(-762, -7570, 144), team: Team.Radiant, type: CampType.Large },
-	
+
 	{ name: "Rad Mid (Medium #1)", pos: new Vector3(-1935, -4806, 128), team: Team.Radiant, type: CampType.Medium },
 	{ name: "Rad Mid (Large)", pos: new Vector3(-1489, -3319, 128), team: Team.Radiant, type: CampType.Large },
 	{ name: "Rad Mid (Medium #2)", pos: new Vector3(-3937, 800, 256), team: Team.Radiant, type: CampType.Medium },
-	
+
 	{ name: "Rad Top (Small)", pos: new Vector3(-7951, -1790, 256), team: Team.Radiant, type: CampType.Small },
 	{ name: "Rad Top (Medium #1)", pos: new Vector3(-8000, -605, 256), team: Team.Radiant, type: CampType.Medium },
 	{ name: "Rad Top (Medium #2)", pos: new Vector3(-2895, 7509, 16), team: Team.Radiant, type: CampType.Medium },
 	{ name: "Rad Top (Medium #3)", pos: new Vector3(-4253, 8336, 0), team: Team.Radiant, type: CampType.Medium },
-	
+
 	{ name: "Rad Bount (Medium)", pos: new Vector3(259, -5051, 134), team: Team.Radiant, type: CampType.Medium },
 
 	// Dire Camps
@@ -103,16 +103,16 @@ const jungleSpots: JungleSpot[] = [
 	{ name: "Dire Top (Medium #1)", pos: new Vector3(-2613, 3916, 256), team: Team.Dire, type: CampType.Medium },
 	{ name: "Dire Top (Medium #2)", pos: new Vector3(2078, 7895, 128), team: Team.Dire, type: CampType.Medium },
 	{ name: "Dire Top (Large #2)", pos: new Vector3(473, 7704, 144), team: Team.Dire, type: CampType.Large },
-	
+
 	{ name: "Dire Mid (Medium #1)", pos: new Vector3(1256, 4072, 128), team: Team.Dire, type: CampType.Medium },
 	{ name: "Dire Mid (Large)", pos: new Vector3(1119, 2551, 128), team: Team.Dire, type: CampType.Large },
 	{ name: "Dire Mid (Medium #2)", pos: new Vector3(3359, -1252, 256), team: Team.Dire, type: CampType.Medium },
-	
+
 	{ name: "Dire Bot (Small)", pos: new Vector3(8000, 1252, 256), team: Team.Dire, type: CampType.Small },
 	{ name: "Dire Bot (Medium #1)", pos: new Vector3(7935, -31, 256), team: Team.Dire, type: CampType.Medium },
 	{ name: "Dire Bot (Medium #2)", pos: new Vector3(4459, -8216, 0), team: Team.Dire, type: CampType.Medium },
 	{ name: "Dire Bot (Medium #3)", pos: new Vector3(2830, -8160, 16), team: Team.Dire, type: CampType.Medium },
-	
+
 	{ name: "Dire Bount (Medium)", pos: new Vector3(-946, 4760, 134), team: Team.Dire, type: CampType.Medium }
 ]
 
@@ -180,14 +180,14 @@ new (class JungleFarmScript {
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
 	private readonly useDamageAbilities = this.abilitiesNode.AddToggle("Урон", true)
 	private readonly aggressiveAbilities = this.abilitiesNode.AddToggle("Агрессивный режим", true)
-	
+
 	private readonly illusionsNode = this.autoNode.AddNode("Иллюзии")
 	private readonly useIllusions = this.illusionsNode.AddToggle("Фарм иллюзиями", true, "Использовать иллюзии для фарма")
-	
+
 	private readonly lotusNode = this.entry.AddNode("Настройки Лотосов", "", "Автосбор лотосов каждые 3 минуты")
 	private readonly collectLotuses = this.lotusNode.AddToggle("Собирать лотосы", true, "Заходить в радиус лотос-пула каждые 3 минуты")
 	private readonly lotusPickRadius = this.lotusNode.AddSlider("Радиус активации", 1500, 500, 3000, 100, "Если бот пробегает в этом радиусе от пула, он зайдет за лотосом")
-	
+
 	private readonly wisdomNode = this.entry.AddNode("Настройки Опыта", "", "Автосбор бассейнов опыта каждые 7 минут")
 	private readonly collectWisdom = this.wisdomNode.AddToggle("Собирать опыт", true, "Заходить в радиус бассейна опыта каждые 7 минут")
 	private readonly wisdomPickRadius = this.wisdomNode.AddSlider("Радиус активации", 2500, 500, 4000, 100, "Если бот пробегает в этом радиусе от бассейна, он зайдет за опытом")
@@ -224,6 +224,7 @@ new (class JungleFarmScript {
 	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
 	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", true, "Показывать уведомление при получении урона от вражеского героя")
 	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", true, "Писать в чат просьбу не бить при получении урона от героя")
+	private readonly chatOnHeroDeath = this.debugNode.AddToggle("Чат при смерти", true, "Писать в чат сообщение при смерти от вражеского героя")
 	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
 	private readonly lanePriorityUntil4 = this.debugNode.AddToggle("Приоритет на линии до 4 лвл", true, "Сначала бить крипов на линии, а потом уже идти на кемпы (до 4 уровня)")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
@@ -283,9 +284,9 @@ new (class JungleFarmScript {
 	private readonly failedActions: Map<string, number> = new Map()
 	private isEscapingTower = false
 	private lastTpTime = 0
-	
+
 	private unitStates: Map<number, UnitState> = new Map()
-	
+
 	private readonly logBuffer: string[] = []
 	private readonly maxLogLines = 15
 
@@ -300,9 +301,9 @@ new (class JungleFarmScript {
 	}
 
 	private GetRandomTargetInRadius(center: Creep, radius: number, hero: Unit): Creep {
-		const nearby = this.cachedCreeps.filter(c => 
-			c.IsAlive && 
-			c.IsVisible && 
+		const nearby = this.cachedCreeps.filter(c =>
+			c.IsAlive &&
+			c.IsVisible &&
 			c.IsEnemy(hero) &&
 			c.IsNeutral === center.IsNeutral &&
 			c.Distance2D(center) <= radius
@@ -339,10 +340,10 @@ new (class JungleFarmScript {
 		} catch (e) {
 			// Fallback if GameState is not ready
 		}
-		
+
 		const prefix = unit ? `[${unit.Name.replace("npc_dota_hero_", "").replace("npc_dota_", "")}] ` : ""
 		const formatted = `[${timeStr}] ${prefix}${message}`
-		
+
 		this.logBuffer.push(formatted)
 		if (this.logBuffer.length > this.maxLogLines) {
 			this.logBuffer.shift()
@@ -393,7 +394,7 @@ new (class JungleFarmScript {
 			} else { // Q, W, E (0, 1, 2)
 				target = hero.Spells[id] ?? undefined
 			}
-			
+
 			if (target && target.Level < target.MaxLevel && hero.Level >= target.RequiredLevel && !target.IsNotLearnable) {
 				candidates.push(target)
 			}
@@ -408,12 +409,12 @@ new (class JungleFarmScript {
 		candidates.push(...availableTalents)
 
 		// 4. Обычные способности (если еще остались)
-		const regulars = spells.filter(s => 
-			!s.IsUltimate && 
-			!s.Name.startsWith("special_bonus_") && 
-			!s.IsNotLearnable && 
+		const regulars = spells.filter(s =>
+			!s.IsUltimate &&
+			!s.Name.startsWith("special_bonus_") &&
+			!s.IsNotLearnable &&
 			!s.IsAttributes &&
-			s.Level < s.MaxLevel && 
+			s.Level < s.MaxLevel &&
 			hero.Level >= s.RequiredLevel
 		)
 		candidates.push(...regulars)
@@ -441,7 +442,7 @@ new (class JungleFarmScript {
 		// Группировка кемпов по типам в меню
 		const campNodes = new Map<CampType, Menu.Node>()
 		const types = [CampType.Small, CampType.Medium, CampType.Large, CampType.Ancient]
-		
+
 		for (const type of types) {
 			campNodes.set(type, this.spotsNode.AddNode(type))
 		}
@@ -450,14 +451,14 @@ new (class JungleFarmScript {
 			const typeNode = campNodes.get(spot.type)!
 			const node = typeNode.AddNode(spot.name)
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
-			
+
 			let defaultLvl = 5
 			if (spot.type === CampType.Small) {
 				defaultLvl = 1
 			} else if (spot.type === CampType.Medium) {
 				defaultLvl = 4
 			}
-			
+
 			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", defaultLvl, 1, 30, 1))
 		}
 
@@ -545,10 +546,12 @@ new (class JungleFarmScript {
 		this.lastHeroAttackerTime = 0
 		this.lastHeroChatTime = 0
 		this.lastHeroAttackerName = ""
-		
+
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
 		this.unitStates.clear()
+		this.failedAbilities.clear()
+		this.failedActions.clear()
 	}
 
 	private LoadUnitState(unit: Unit): void {
@@ -628,7 +631,7 @@ new (class JungleFarmScript {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const attacker = EntityManager.EntityByIndex(obj.entindex_attacker)
 			const hero = LocalPlayer?.Hero
-			
+
 			if (hero && victim === hero && attacker instanceof Unit && attacker.IsEnemy(hero)) {
 				if (attacker instanceof Creep && this.IsInTowerRange(attacker.Position, hero)) {
 					this.lastDamageTime = GameState.RawGameTime
@@ -640,10 +643,10 @@ new (class JungleFarmScript {
 					this.lastHeroAttackerTime = GameState.RawGameTime
 
 					// Отправка в чат при уроне
-					if (this.chatOnHeroDamage.value && 
-					    hero.Level >= this.chatOnHeroDamageLevel.value && 
-					    (this.lastHeroChatTime === 0 || GameState.RawGameTime > this.lastHeroChatTime + 10.0)) { // Задержка 10 сек между сообщениями
-						
+					if (this.chatOnHeroDamage.value &&
+						hero.Level >= this.chatOnHeroDamageLevel.value &&
+						(this.lastHeroChatTime === 0 || GameState.RawGameTime > this.lastHeroChatTime + 10.0)) { // Задержка 10 сек между сообщениями
+
 						const displayName = name.charAt(0) + name.slice(1).toLowerCase()
 						this.SafeExecuteCommand(`say "Mr ${displayName} не бей меня пожалуйста"`)
 						this.lastHeroChatTime = GameState.RawGameTime
@@ -655,6 +658,18 @@ new (class JungleFarmScript {
 		if (eventName === "entity_killed") {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const hero = LocalPlayer?.Hero
+
+			if (hero && victim === hero) {
+				const attacker = EntityManager.EntityByIndex(obj.entindex_attacker)
+				if (attacker instanceof Unit && attacker.IsHero && attacker.IsEnemy(hero)) {
+					if (this.chatOnHeroDeath.value && hero.Level >= this.chatOnHeroDamageLevel.value) {
+						const name = attacker.Name.replace("npc_dota_hero_", "").replace(/_/g, " ").toUpperCase()
+						const displayName = name.charAt(0) + name.slice(1).toLowerCase()
+						this.SafeExecuteCommand(`say "Mr ${displayName} я уже красный, за что..."`)
+					}
+				}
+			}
+
 			if (hero && victim instanceof Creep && !victim.IsNeutral && victim.IsEnemy(hero) && hero.Distance2D(victim) < 1200) {
 				const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 				const isAtBase = fountain && victim.Distance2D(fountain) < 5500
@@ -671,11 +686,11 @@ new (class JungleFarmScript {
 				const nearestSpot = jungleSpots.slice().sort((a, b) => victim.Distance2D(a.pos) - victim.Distance2D(b.pos))[0]
 				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 900) {
 					// Проверка: остались ли еще живые нейтралы в этом споте
-					const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).find(c => 
-						c !== victim && 
-						c.IsAlive && 
-						c.IsNeutral && 
-						c.IsVisible && 
+					const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).find(c =>
+						c !== victim &&
+						c.IsAlive &&
+						c.IsNeutral &&
+						c.IsVisible &&
 						!c.IsPhantom &&
 						c.Distance2D(nearestSpot.pos) < 900
 					)
@@ -697,10 +712,10 @@ new (class JungleFarmScript {
 		const imgWidth = 188 // 221 - 15%
 		const imgHeight = 188
 		const logoPos = new Vector2(280, screenSize.y - imgHeight - 45)
-		
+
 		// Ensure no background is drawn under the logo (removed any potential rects)
 		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
-		
+
 		// Premium Golden Inscription BehUp.online
 		const brandText = "BehUp.online"
 		const fontSize = 17
@@ -709,11 +724,11 @@ new (class JungleFarmScript {
 			logoPos.x + (imgWidth - textSize.x) / 2,
 			logoPos.y + imgHeight + 2
 		)
-		
+
 		// Text shadows for volume effect
 		RendererSDK.Text(brandText, textPos.AddScalar(1), new Color(0, 0, 0, 200), "Roboto", fontSize, 900)
 		RendererSDK.Text(brandText, textPos.AddScalarY(1), new Color(139, 69, 19, 200), "Roboto", fontSize, 900) // Dark gold/bronze shadow
-		
+
 		// Gradient-like gold effect (layered)
 		RendererSDK.Text(brandText, textPos, new Color(255, 215, 0), "Roboto", fontSize, 900) // Main Gold
 		RendererSDK.Text(brandText, textPos.AddScalarY(-0.5), new Color(255, 255, 255, 40), "Roboto", fontSize, 900) // Top highlight
@@ -721,11 +736,11 @@ new (class JungleFarmScript {
 		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
 			const mouseWorld = InputManager.CursorOnWorld
 			const text = `Mouse World: ${Math.floor(mouseWorld.x)}, ${Math.floor(mouseWorld.y)}, ${Math.floor(mouseWorld.z)}`
-			
+
 			// Позиция в углу
 			const posX = screenSize.x - 300 - 10
 			const posY = 10
-			
+
 			RendererSDK.FilledRect(new Vector2(posX, posY), new Vector2(300, 30), new Color(0, 0, 0, 150))
 			RendererSDK.OutlinedRect(new Vector2(posX, posY), new Vector2(300, 30), 1, new Color(255, 255, 255, 50))
 			RendererSDK.Text(text, new Vector2(posX + 10, posY + 5), Color.Yellow, "Roboto", 16)
@@ -749,7 +764,7 @@ new (class JungleFarmScript {
 			}
 
 			const hero = LocalPlayer?.Hero
-			
+
 			// Auto-disable logic if in main menu
 			if (hero === undefined) {
 				if (this.autoDisableInMenu.value && this.state.value) {
@@ -811,7 +826,7 @@ new (class JungleFarmScript {
 			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
 				const playerID = LocalPlayer?.PlayerID
 				if (playerID !== undefined) {
-					const myUnits = EntityManager.GetEntitiesByClass(Unit).filter(u => 
+					const myUnits = EntityManager.GetEntitiesByClass(Unit).filter(u =>
 						u.IsAlive && u.IsControllableByPlayerMask !== 0n && (u.IsControllableByPlayerMask & (1n << BigInt(playerID))) !== 0n
 					)
 
@@ -827,7 +842,7 @@ new (class JungleFarmScript {
 
 						const abilitySent = this.AutoAbilities(u)
 						const itemSent = this.AutoItems(u)
-						
+
 						if (!abilitySent && !itemSent) {
 							this.OnUpdate(u)
 						}
@@ -835,13 +850,13 @@ new (class JungleFarmScript {
 						this.SaveUnitState(u)
 					}
 				}
-				
+
 				this.lastLogicTime = GameState.RawGameTime
 			}
 
 			// Lock camera on hero using console command with active check
 			if (this.lockCamera.value && typeof Camera !== 'undefined' && typeof IOBuffer !== 'undefined' && IOBuffer !== null) {
-					void Camera.Position // Touch to populate IOBuffer
+				void Camera.Position // Touch to populate IOBuffer
 				if (typeof IOBuffer[0] === 'number') {
 					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
 					if (hero.Distance2D(camPos) > 100 || !this.lastCameraLock) {
@@ -876,10 +891,10 @@ new (class JungleFarmScript {
 						// Premium Marker: Diamond shape with outline
 						const markerPos = screenPos.Subtract(new Vector2(6, 6))
 						const markerSize = new Vector2(12, 12)
-						
+
 						// Shadow/Glow effect
 						RendererSDK.FilledRect(markerPos.Subtract(new Vector2(1, 1)), markerSize.Add(new Vector2(2, 2)), new Color(0, 0, 0, 150), 45)
-						
+
 						// Main Marker
 						RendererSDK.FilledRect(markerPos, markerSize, color, 45)
 						RendererSDK.OutlinedRect(markerPos, markerSize, 1, color.SetA(255), 45)
@@ -887,14 +902,14 @@ new (class JungleFarmScript {
 						// Labels with shadows
 						const nameText = spot.name
 						const statusText = !isLevelValid ? `[LVL ${minLevel}+]` : (this.emptySpots.has(spot.name) ? "PУСТО" : "READY")
-						
+
 						const nameColor = color.SetA(255)
 						const statusColor = this.emptySpots.has(spot.name) ? Color.Red.SetA(200) : (isLevelValid ? Color.Green.SetA(200) : Color.Gray.SetA(200))
 
 						// Draw Name
 						RendererSDK.Text(nameText, screenPos.AddScalarY(14).AddScalarX(1), Color.Black, "Roboto", 11, 600)
 						RendererSDK.Text(nameText, screenPos.AddScalarY(14), nameColor, "Roboto", 11, 600)
-						
+
 						// Draw Status
 						RendererSDK.Text(statusText, screenPos.AddScalarY(26).AddScalarX(1), Color.Black, "Roboto", 9, 400)
 						RendererSDK.Text(statusText, screenPos.AddScalarY(26), statusColor, "Roboto", 9, 400)
@@ -938,7 +953,7 @@ new (class JungleFarmScript {
 			for (const [index, state] of this.unitStates) {
 				const unit = EntityManager.EntityByIndex(index) as Unit
 				if (!unit || !unit.IsAlive) continue
-				
+
 				const isMainHero = unit.IsHero && !unit.IsIllusion
 				const unitNameDisplay = isMainHero ? "Герой" : "Иллюзия"
 				const color = isMainHero ? Color.White : Color.Gray.SetA(200)
@@ -979,7 +994,7 @@ new (class JungleFarmScript {
 			this.cachedTowers = this.SafeGetEntities<Tower>(Tower)
 			this.cachedCreeps = this.SafeGetEntities<Creep>(Creep)
 			this.cachedRunes = this.pickAllRunes.value ? this.SafeGetEntities<Rune>(Rune) : []
-			this.cachedHeroes = (this.skipIfAllyFarming.value || this.skipIfEnemyFarming.value) 
+			this.cachedHeroes = (this.skipIfAllyFarming.value || this.skipIfEnemyFarming.value)
 				? this.SafeGetEntities<Unit>(Unit).filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
 				: []
 
@@ -996,7 +1011,7 @@ new (class JungleFarmScript {
 
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
 			const currentMinute = Math.floor(gameTime / 60)
-			
+
 			if (this.lastMinute === -1) this.lastMinute = currentMinute
 			if (currentMinute !== this.lastMinute) {
 				this.emptySpots.clear()
@@ -1018,7 +1033,7 @@ new (class JungleFarmScript {
 
 			this.nextOrderDelay = 0.1 + Math.random() * 0.7 // Рандом от 0.1 до 0.8 для следующего клика
 
-			const nearbyCreep = this.cachedCreeps.find(c => 
+			const nearbyCreep = this.cachedCreeps.find(c =>
 				!c.IsNeutral && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 2000 && !this.IsInTowerRange(c.Position, hero)
 			)
 			if (nearbyCreep) {
@@ -1034,7 +1049,7 @@ new (class JungleFarmScript {
 				}
 				this.isGoingToFountain = true
 				this.isReturningAfterHeal = false
-				
+
 				if (this.autoTpLowHp.value && rawTime > this.lastTpTime + 10) {
 					const tp = hero.GetItemByName("item_tpscroll")
 					if (tp && tp.IsReady) {
@@ -1068,7 +1083,7 @@ new (class JungleFarmScript {
 			if (this.isReturningAfterHeal && this.lastPosBeforeHeal) {
 				const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value
 				const dist = hero.Distance2D(this.lastPosBeforeHeal)
-				
+
 				if (canFarmJungle) {
 					this.isReturningAfterHeal = false
 					this.Log(`Возврат отменен: уровень ${hero.Level} позволяет фармить лес`)
@@ -1081,7 +1096,7 @@ new (class JungleFarmScript {
 			if (this.fleeFromCreepsUnderTower.value && rawTime < this.lastDamageTime + 3.0) {
 				const target = hero.Target
 				const isSafeToHit = target instanceof Creep && target.HP < hero.AttackDamageMax * 2 // Можем убить за 1-2 удара
-				
+
 				if (!target || !target.IsAlive || (this.IsInTowerRange(target.Position, hero) && !isSafeToHit)) {
 					this.Flee(hero, "Отход (Урон под башней)")
 					return
@@ -1109,7 +1124,7 @@ new (class JungleFarmScript {
 
 		// Проверка нейтрального слота (16) строго через Inventory.GetItem
 		const neutralItem = hero.Inventory.GetItem(16)
-		
+
 		if (!neutralItem) {
 			// На данном API автоматический выбор (использование жетона/токена) невозможен.
 			// Valve блокирует программные клики (DispatchEvent) по основному HUD, а 
@@ -1128,7 +1143,7 @@ new (class JungleFarmScript {
 
 	private AutoItems(hero: Unit): boolean {
 		if (this.currentStatus === "Возврат на базу" || this.currentStatus === "Побег от башни") return false
-		
+
 		// Экстренное исцеление (Лотосы, Сыр) - Самый высокий приоритет
 		if (this.autoLotus.value && hero.HPPercent < this.lotusHpThreshold.value) {
 			const healItem = hero.GetItemByName(/item_(healing_lotus|great_healing_lotus|greater_healing_lotus|famango|great_famango|greater_famango|cheese)/)
@@ -1203,11 +1218,11 @@ new (class JungleFarmScript {
 			}
 		}
 
-		const spells = hero.Spells.filter((s): s is Ability => 
-			s !== undefined && 
-			s.Level > 0 && 
+		const spells = hero.Spells.filter((s): s is Ability =>
+			s !== undefined &&
+			s.Level > 0 &&
 			s.IsActivated &&
-			s.IsReady && 
+			s.IsReady &&
 			!s.IsNotLearnable &&
 			!s.IsPassive &&
 			!s.IsHidden &&
@@ -1288,25 +1303,25 @@ new (class JungleFarmScript {
 		const range = ability.CastRange + 150 // Буфер
 
 		// Враги
-		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_ENEMY) !== 0n || 
+		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_ENEMY) !== 0n ||
 			(teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_BOTH) !== 0n) {
-			
+
 			// Приоритет героям
 			if (this.useTargetedHeroes.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
-				const enemyHero = this.cachedHeroes.find(h => 
+				const enemyHero = this.cachedHeroes.find(h =>
 					h.IsEnemy(hero) && h.IsAlive && h.IsVisible && !h.IsInvulnerable &&
-					hero.Distance2D(h) < range && 
+					hero.Distance2D(h) < range &&
 					(!h.IsMagicImmune || ability.CanHitSpellImmuneEnemy)
 				)
 				if (enemyHero) return enemyHero
 			}
 
 			// Крипы
-			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n || 
+			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n ||
 				(typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_BASIC) !== 0n) {
-				const creep = this.cachedCreeps.find(c => 
+				const creep = this.cachedCreeps.find(c =>
 					c.IsEnemy(hero) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
-					hero.Distance2D(c) < range && 
+					hero.Distance2D(c) < range &&
 					(!c.IsMagicImmune || ability.CanHitSpellImmuneEnemy) &&
 					!this.IsIgnoredUnit(c)
 				)
@@ -1315,9 +1330,9 @@ new (class JungleFarmScript {
 		}
 
 		// Союзники и Селф
-		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_FRIENDLY) !== 0n || 
+		if ((teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_FRIENDLY) !== 0n ||
 			(teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_BOTH) !== 0n) {
-			
+
 			// Сами на себя (если бафф или хилл)
 			if (this.useTargetedSelf.value) {
 				const isLowHp = hero.HPPercent < 50
@@ -1334,9 +1349,9 @@ new (class JungleFarmScript {
 
 			// Другие союзники
 			if (this.useTargetedAllies.value && (typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_HERO) !== 0n) {
-				const allyHero = this.cachedHeroes.find(h => 
+				const allyHero = this.cachedHeroes.find(h =>
 					!h.IsEnemy(hero) && h !== hero && h.IsAlive && h.IsVisible && !h.IsInvulnerable &&
-					hero.Distance2D(h) < range && 
+					hero.Distance2D(h) < range &&
 					(!h.IsMagicImmune || ability.CanHitSpellImmuneAlly) &&
 					(h.HPPercent < 60 || ability.IsBuff()) // Упрощенное условие для союзников
 				)
@@ -1363,20 +1378,20 @@ new (class JungleFarmScript {
 		this.setStatus(status)
 		const alliedTowers = this.cachedTowers.filter(t => t.IsAlive && !t.IsEnemy(hero))
 		const nearestAllyTower = alliedTowers.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
-		
+
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 		const basePos = fountain?.Position ?? hero.Position
 
 		// Приоритет - ближайшая союзная башня, если она не слишком далеко (на линии)
 		// Если союзных башен нет или они далеко - отходим в сторону базы
-		const fleeTarget = (nearestAllyTower && hero.Distance2D(nearestAllyTower) < 4000) 
-			? nearestAllyTower.Position 
+		const fleeTarget = (nearestAllyTower && hero.Distance2D(nearestAllyTower) < 4000)
+			? nearestAllyTower.Position
 			: basePos
 
 		const dir = fleeTarget.Subtract(hero.Position).Normalize()
 		// Отходим на 600 единиц (достаточно чтобы выйти из-под агра, но не убежать в лес)
 		const movePos = hero.Position.Add(dir.MultiplyScalar(600))
-		
+
 		// Используем GetSafeMovePos только если мы НЕ под башней, чтобы не было кругов
 		// Если мы УЖЕ под башней, просто бежим по прямой от неё в безопасную сторону
 		hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
@@ -1386,14 +1401,14 @@ new (class JungleFarmScript {
 	private Farm(hero: Unit): boolean {
 		try {
 			const rawTime = GameState.RawGameTime
-			
+
 			if (rawTime < this.lastOrderTime + this.nextOrderDelay) return false
 
 			this.nextOrderDelay = 0.1 + Math.random() * 0.7 // Рандом от 0.1 до 0.8 для следующего клика
 
 			const inTowerRange = this.IsInTowerRange(hero.Position, hero)
 			const isBypassing = rawTime < this.lastBypassTime + 10.0
-			
+
 			if (this.avoidTowers.value && (inTowerRange || this.isEscapingTower) && !isBypassing) {
 				const safetyBuffer = this.isEscapingTower ? 300 : 0
 				if (this.IsInTowerRange(hero.Position, hero, safetyBuffer)) {
@@ -1408,7 +1423,7 @@ new (class JungleFarmScript {
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
 			if (this.collectLotuses.value && gameTime > 180) {
 				const cycle = Math.floor(gameTime / 180)
-				
+
 				// Если мы в режиме лотоса, продолжаем сбор
 				if (this.currentFarmMode === "lotus" && this.currentLotusSpot) {
 					// Если цикл уже прошел, сбрасываем режим
@@ -1419,7 +1434,7 @@ new (class JungleFarmScript {
 					} else {
 						const dist = hero.Distance2D(this.currentLotusSpot.pos)
 						this.targetPos = this.currentLotusSpot.pos
-						
+
 						if (dist > 250) {
 							this.setStatus(`Сбор лотоса: ${this.currentLotusSpot.name}`)
 							hero.MoveTo(this.currentLotusSpot.pos, false, true)
@@ -1431,7 +1446,7 @@ new (class JungleFarmScript {
 							if (this.lotusArrivalTime === 0) {
 								this.lotusArrivalTime = rawTime
 							}
-							
+
 							if (rawTime < this.lotusArrivalTime + 3.1) {
 								this.setStatus(`Ожидание лотоса (3 сек): ${Math.ceil(3.1 - (rawTime - this.lotusArrivalTime))}с`)
 								return true
@@ -1461,7 +1476,7 @@ new (class JungleFarmScript {
 			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
 			if (this.collectWisdom.value && gameTime > 420) {
 				const cycle = Math.floor(gameTime / 420)
-				
+
 				if (this.currentFarmMode === "wisdom" && this.currentWisdomSpot) {
 					// Если цикл уже прошел, сбрасываем режим
 					if (this.lastWisdomPickCycle >= cycle) {
@@ -1471,7 +1486,7 @@ new (class JungleFarmScript {
 					} else {
 						const dist = hero.Distance2D(this.currentWisdomSpot.pos)
 						this.targetPos = this.currentWisdomSpot.pos
-						
+
 						if (dist > 250) {
 							this.setStatus(`Сбор опыта: ${this.currentWisdomSpot.name}`)
 							hero.MoveTo(this.currentWisdomSpot.pos, false, true)
@@ -1482,7 +1497,7 @@ new (class JungleFarmScript {
 							if (this.wisdomArrivalTime === 0) {
 								this.wisdomArrivalTime = rawTime
 							}
-							
+
 							if (rawTime < this.wisdomArrivalTime + 4.1) {
 								this.setStatus(`Сбор опыта (4 сек): ${Math.max(0, Math.ceil(4.1 - (rawTime - this.wisdomArrivalTime)))}с`)
 								return true
@@ -1509,8 +1524,8 @@ new (class JungleFarmScript {
 			}
 
 			if (this.pickAllRunes.value) {
-				const rune = this.cachedRunes.find(r => 
-					hero.Distance2D(r) < 1500 && 
+				const rune = this.cachedRunes.find(r =>
+					hero.Distance2D(r) < 1500 &&
 					!this.IsInTowerRange(r.Position, hero)
 				)
 				if (rune) {
@@ -1524,7 +1539,7 @@ new (class JungleFarmScript {
 
 			const closestLaneCreep = this.laneFarm.value ? this.GetNearestLaneCreep(hero) : undefined
 			let targetCreep = closestLaneCreep
-			
+
 			const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 			const isAtBase = fountain && hero.Distance2D(fountain) < 5500
 
@@ -1533,12 +1548,12 @@ new (class JungleFarmScript {
 			const withinWaitTime = timeSinceLastCreep < this.laneWaitTime.value
 			const belowLevelThreshold = hero.Level < this.laneOnlyUntilLevel.value
 
-			const waitingOnLane = this.laneFarm.value && 
-			                      !hasValidLaneCreep && 
-			                      withinWaitTime &&
-			                      belowLevelThreshold &&
-			                      !isAtBase &&
-			                      !(this.lanePriorityUntil4.value && hero.Level < 4)
+			const waitingOnLane = this.laneFarm.value &&
+				!hasValidLaneCreep &&
+				withinWaitTime &&
+				belowLevelThreshold &&
+				!isAtBase &&
+				!(this.lanePriorityUntil4.value && hero.Level < 4)
 
 			if (this.detailedDebug.value && !hasValidLaneCreep && this.laneFarm.value && !isAtBase && belowLevelThreshold) {
 				this.Log(`Ожидание на линии: Крип:${hasValidLaneCreep} Время:${timeSinceLastCreep.toFixed(1)}/${this.laneWaitTime.value} Lvl:${belowLevelThreshold}`)
@@ -1553,7 +1568,7 @@ new (class JungleFarmScript {
 			if (closestLaneCreep) {
 				const distToCreep = hero.Distance2D(closestLaneCreep)
 				const distToJungle = nearestSpot ? hero.Distance2D(nearestSpot.pos) : Infinity
-				
+
 				if (forceLanePriority || !nearestSpot) {
 					shouldFarmLane = true
 				} else {
@@ -1583,14 +1598,14 @@ new (class JungleFarmScript {
 						this.lastModeSwitchTime = rawTime
 					}
 					this.setStatus("Фарм линии")
-					
+
 					// Рандомизация цели только для атаки
 					targetCreep = this.GetRandomTargetInRadius(targetCreep, 100, hero)
 					this.targetPos = targetCreep.Position
 
 					const isAttackingSame = hero.TargetIndex_ === targetCreep.Index
 					const canOrbWalk = this.experimentalOrbWalk.value && hero.AttackAnimationPoint > 0 && (GameState.RawGameTime > hero.LastAttackTime + hero.AttackAnimationPoint)
-					
+
 					if (!isAttackingSame || this.spamClick.value || canOrbWalk) {
 						let targetPos = targetCreep.Position
 						if (this.jitterMove.value) {
@@ -1618,10 +1633,10 @@ new (class JungleFarmScript {
 
 			if (waitingOnLane) {
 				this.setStatus(`Ожидание крипов (${Math.ceil(this.laneWaitTime.value - (rawTime - this.lastLaneCreepVisibleTime))}сек)`)
-				
+
 				if (this.randomWalkWaiting.value || (this.chaoticMoveAroundLastCreep.value && this.lastCreepDeathPos)) {
 					let centerPos = this.lastCreepDeathPos
-					
+
 					// Если нет точки смерти, выбираем позицию на линии принудительно
 					if (!centerPos) {
 						centerPos = this.GetDefaultLanePos(hero)
@@ -1640,12 +1655,12 @@ new (class JungleFarmScript {
 							this.lastOrderTime = rawTime
 							return true
 						}
-					} 
+					}
 
 					if (rawTime > this.lastRandomWalkPosUpdateTime + 0.5) {
 						let attempts = 0
 						let foundValidPos = false
-						
+
 						while (attempts < 10 && !foundValidPos) {
 							const angle = Math.random() * Math.PI * 2
 							const radius = 100 + Math.random() * 300
@@ -1654,7 +1669,7 @@ new (class JungleFarmScript {
 								centerPos.y + Math.sin(angle) * radius,
 								centerPos.z
 							)
-							
+
 							if (!this.IsInTowerRange(randomPos, hero)) {
 								this.lastRandomWalkPos = randomPos
 								foundValidPos = true
@@ -1706,7 +1721,7 @@ new (class JungleFarmScript {
 				if (neutralsInSpot.length > 0) {
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					const neutral = this.GetRandomTargetInRadius(closestNeutral, 100, hero)
-					
+
 					this.setStatus("Фарм леса")
 					this.targetPos = neutral.Position
 
@@ -1793,7 +1808,7 @@ new (class JungleFarmScript {
 				if (this.laneFarm.value && this.lastCreepDeathPos) {
 					this.setStatus("Возврат на линию")
 					let target = this.lastCreepDeathPos
-					
+
 					// Если точка смерти крипа под ВРАЖЕСКОЙ башней, находим безопасную точку перед ней
 					if (this.IsInTowerRange(target, hero)) {
 						const tower = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(target) < 1000)
@@ -1813,7 +1828,7 @@ new (class JungleFarmScript {
 				this.setStatus("Нет доступных целей")
 				this.currentFarmMode = "none"
 				this.targetPos = undefined
-				
+
 				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
 				if (this.forcedBaseExit.value && distToFountain < 6000 && hero.Level < this.laneOnlyUntilLevel.value && !this.isReturningAfterHeal) {
 					const furthestTower = this.GetFurthestAlliedTower(hero)
@@ -1844,7 +1859,7 @@ new (class JungleFarmScript {
 				if (h.Distance2D(spot.pos) < 600) {
 					const isAttackingCreep = h.IsAttacking && h.Target instanceof Creep
 					const hasFarmBuff = h.Buffs.some(b => /mask_of_madness|hand_of_midas|battlefury/.test(b.Name))
-					
+
 					if (isAttackingCreep || hasFarmBuff) {
 						if (this.skipIfAllyFarming.value && !h.IsEnemy(hero)) {
 							this.occupiedSpots.set(spot.name, rawTime + 7.0) // Запоминаем на 7 сек
@@ -1945,23 +1960,23 @@ new (class JungleFarmScript {
 
 	private TrackGlobalJungleStatus(hero: Unit): void {
 		const allies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && !h.IsIllusion)
-		
+
 		for (const spot of jungleSpots) {
 			if (this.emptySpots.has(spot.name)) continue
-			
+
 			const nearestAlly = allies.find(a => a.Distance2D(spot.pos) < 600)
 			if (nearestAlly) {
 				// Если союзник на споте, проверяем наличие крипов
-				const neutrals = this.cachedCreeps.filter(c => 
-					c.IsAlive && 
-					c.IsNeutral && 
-					c.IsVisible && 
+				const neutrals = this.cachedCreeps.filter(c =>
+					c.IsAlive &&
+					c.IsNeutral &&
+					c.IsVisible &&
 					!c.IsPhantom &&
 					!c.IsInvulnerable &&
 					c.Name.includes("neutral") &&
 					c.Distance2D(spot.pos) < 900
 				)
-				
+
 				if (neutrals.length === 0) {
 					this.emptySpots.add(spot.name)
 					this.Log(`Спот ${spot.name} отмечен как пустой (союзник: ${nearestAlly.Name.replace("npc_dota_hero_", "")})`)
@@ -1992,13 +2007,13 @@ new (class JungleFarmScript {
 	private IsInTowerRange(pos: Vector3, hero: Unit, additionalRadius = 0): boolean {
 		const tower = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(pos) < 700 + 150 + additionalRadius)
 		if (tower) return true
-		
+
 		if (this.laneTowerSafety.value && hero.Level < 10) {
 			const extra = this.laneTowerRadius.value
 			const towerExtra = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(pos) < 700 + 150 + extra + additionalRadius)
 			if (towerExtra) return true
 		}
-		
+
 		return false
 	}
 
@@ -2012,7 +2027,7 @@ new (class JungleFarmScript {
 		if (alliedTowers.length === 0) return undefined
 
 		let priority = this.lanePriority.SelectedID
-		
+
 		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
 			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
 			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
@@ -2058,7 +2073,7 @@ new (class JungleFarmScript {
 	private GetDefaultLanePos(hero: Unit): Vector3 {
 		const isRadiant = hero.Team === Team.Radiant
 		let priority = this.lanePriority.SelectedID
-		
+
 		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
 			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
 			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
@@ -2083,7 +2098,7 @@ new (class JungleFarmScript {
 
 		const dir = end.Subtract(start).Normalize()
 		const dist = start.Distance2D(end)
-		
+
 		for (let d = 100; d < dist; d += 150) {
 			const checkPos = start.Add(dir.MultiplyScalar(d))
 			if (this.IsInTowerRange(checkPos, hero)) {
@@ -2092,10 +2107,10 @@ new (class JungleFarmScript {
 					const rad = angle * Math.PI / 180
 					const escapeDir1 = dir.Rotated(rad)
 					const escapeDir2 = dir.Rotated(-rad)
-					
+
 					const escapePos1 = checkPos.Add(escapeDir1.MultiplyScalar(1000))
 					const escapePos2 = checkPos.Add(escapeDir2.MultiplyScalar(1000))
-					
+
 					if (!this.IsInTowerRange(escapePos1, hero)) {
 						this.lastBypassTime = GameState.RawGameTime
 						return escapePos1
@@ -2105,13 +2120,13 @@ new (class JungleFarmScript {
 						return escapePos2
 					}
 				}
-				
+
 				// Если обход не найден, возвращаемся назад от башни
 				this.lastBypassTime = GameState.RawGameTime
 				return start.Subtract(dir.MultiplyScalar(300))
 			}
 		}
-		
+
 		return end
 	}
 })()
