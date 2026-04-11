@@ -24,10 +24,18 @@ import {
 	DOTA_UNIT_TARGET_TYPE
 } from "github.com/octarine-public/wrapper/index"
 
+enum CampType {
+	Small = "Маленький",
+	Medium = "Средний",
+	Large = "Большой",
+	Ancient = "Древний"
+}
+
 interface JungleSpot {
 	name: string
 	pos: Vector3
 	team: Team
+	type: CampType
 }
 
 interface UnitState {
@@ -71,22 +79,41 @@ const wisdomSpots: WisdomSpot[] = [
 ]
 
 const jungleSpots: JungleSpot[] = [
-	{ name: "diretoplinespotmalenkiy", pos: new Vector3(-3901, 4903, 128), team: Team.Dire },
-	{ name: "diretoplinespotbolwoy", pos: new Vector3(-4791, 4036, 128), team: Team.Dire },
-	{ name: "diretopbountyspotsredniy", pos: new Vector3(-2613, 3916, 256), team: Team.Dire },
-	{ name: "diretopbountyyawericispot", pos: new Vector3(-946, 4760, 134), team: Team.Dire },
-	{ name: "diremidsredniycamp", pos: new Vector3(1256, 4072, 128), team: Team.Dire },
-	{ name: "diremidbolwoycamp", pos: new Vector3(1119, 2551, 128), team: Team.Dire },
-	{ name: "direbotsredniycampexp", pos: new Vector3(7935, -31, 256), team: Team.Dire },
-	{ name: "direbotmalenkiycampexp", pos: new Vector3(8000, 1252, 256), team: Team.Dire },
-	{ name: "radbotlinespotmalenkiy", pos: new Vector3(4062, -5101, 128), team: Team.Radiant },
-	{ name: "radbotlinespotbolwoy", pos: new Vector3(4749, -3750, 128), team: Team.Radiant },
-	{ name: "radbotbountyspotsredniy", pos: new Vector3(1894, -4077, 256), team: Team.Radiant },
-	{ name: "radbountyyawericispot", pos: new Vector3(259, -5051, 134), team: Team.Radiant },
-	{ name: "radmidsredniycamp", pos: new Vector3(-1935, -4806, 128), team: Team.Radiant },
-	{ name: "radmidbolwoycamp", pos: new Vector3(-1489, -3319, 128), team: Team.Radiant },
-	{ name: "radtopmalenkiycampexp", pos: new Vector3(-7951, -1790, 256), team: Team.Radiant },
-	{ name: "radtopsredniycampexp", pos: new Vector3(-8000, -605, 256), team: Team.Radiant }
+	// Radiant Camps
+	{ name: "Rad Bot (Small)", pos: new Vector3(4062, -5101, 128), team: Team.Radiant, type: CampType.Small },
+	{ name: "Rad Bot (Large)", pos: new Vector3(4749, -3750, 128), team: Team.Radiant, type: CampType.Large },
+	{ name: "Rad Bot (Medium #1)", pos: new Vector3(1894, -4077, 256), team: Team.Radiant, type: CampType.Medium },
+	{ name: "Rad Bot (Medium #2)", pos: new Vector3(-2421, -8353, 128), team: Team.Radiant, type: CampType.Medium },
+	{ name: "Rad Bot (Large #2)", pos: new Vector3(-762, -7570, 144), team: Team.Radiant, type: CampType.Large },
+	
+	{ name: "Rad Mid (Medium #1)", pos: new Vector3(-1935, -4806, 128), team: Team.Radiant, type: CampType.Medium },
+	{ name: "Rad Mid (Large)", pos: new Vector3(-1489, -3319, 128), team: Team.Radiant, type: CampType.Large },
+	{ name: "Rad Mid (Medium #2)", pos: new Vector3(-3937, 800, 256), team: Team.Radiant, type: CampType.Medium },
+	
+	{ name: "Rad Top (Small)", pos: new Vector3(-7951, -1790, 256), team: Team.Radiant, type: CampType.Small },
+	{ name: "Rad Top (Medium #1)", pos: new Vector3(-8000, -605, 256), team: Team.Radiant, type: CampType.Medium },
+	{ name: "Rad Top (Medium #2)", pos: new Vector3(-2895, 7509, 16), team: Team.Radiant, type: CampType.Medium },
+	{ name: "Rad Top (Medium #3)", pos: new Vector3(-4253, 8336, 0), team: Team.Radiant, type: CampType.Medium },
+	
+	{ name: "Rad Bount (Medium)", pos: new Vector3(259, -5051, 134), team: Team.Radiant, type: CampType.Medium },
+
+	// Dire Camps
+	{ name: "Dire Top (Small)", pos: new Vector3(-3901, 4903, 128), team: Team.Dire, type: CampType.Small },
+	{ name: "Dire Top (Large)", pos: new Vector3(-4791, 4036, 128), team: Team.Dire, type: CampType.Large },
+	{ name: "Dire Top (Medium #1)", pos: new Vector3(-2613, 3916, 256), team: Team.Dire, type: CampType.Medium },
+	{ name: "Dire Top (Medium #2)", pos: new Vector3(2078, 7895, 128), team: Team.Dire, type: CampType.Medium },
+	{ name: "Dire Top (Large #2)", pos: new Vector3(473, 7704, 144), team: Team.Dire, type: CampType.Large },
+	
+	{ name: "Dire Mid (Medium #1)", pos: new Vector3(1256, 4072, 128), team: Team.Dire, type: CampType.Medium },
+	{ name: "Dire Mid (Large)", pos: new Vector3(1119, 2551, 128), team: Team.Dire, type: CampType.Large },
+	{ name: "Dire Mid (Medium #2)", pos: new Vector3(3359, -1252, 256), team: Team.Dire, type: CampType.Medium },
+	
+	{ name: "Dire Bot (Small)", pos: new Vector3(8000, 1252, 256), team: Team.Dire, type: CampType.Small },
+	{ name: "Dire Bot (Medium #1)", pos: new Vector3(7935, -31, 256), team: Team.Dire, type: CampType.Medium },
+	{ name: "Dire Bot (Medium #2)", pos: new Vector3(4459, -8216, 0), team: Team.Dire, type: CampType.Medium },
+	{ name: "Dire Bot (Medium #3)", pos: new Vector3(2830, -8160, 16), team: Team.Dire, type: CampType.Medium },
+	
+	{ name: "Dire Bount (Medium)", pos: new Vector3(-946, 4760, 134), team: Team.Dire, type: CampType.Medium }
 ]
 
 interface HeroLevelingSettings {
@@ -409,14 +436,23 @@ new (class JungleFarmScript {
 			}
 		})
 
+		// Группировка кемпов по типам в меню
+		const campNodes = new Map<CampType, Menu.Node>()
+		const types = [CampType.Small, CampType.Medium, CampType.Large, CampType.Ancient]
+		
+		for (const type of types) {
+			campNodes.set(type, this.spotsNode.AddNode(type))
+		}
+
 		for (const spot of jungleSpots) {
-			const node = this.spotsNode.AddNode(spot.name)
+			const typeNode = campNodes.get(spot.type)!
+			const node = typeNode.AddNode(spot.name)
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
 			
 			let defaultLvl = 5
-			if (spot.name.includes("malenkiy")) {
+			if (spot.type === CampType.Small) {
 				defaultLvl = 1
-			} else if (spot.name.includes("sredniy")) {
+			} else if (spot.type === CampType.Medium) {
 				defaultLvl = 4
 			}
 			
@@ -429,7 +465,7 @@ new (class JungleFarmScript {
 
 		this.setSmallCampsLvl.OnValue(() => {
 			for (const spot of jungleSpots) {
-				if (spot.name.includes("malenkiy")) {
+				if (spot.type === CampType.Small) {
 					const slider = this.spotLevelSliders.get(spot.name)
 					if (slider) slider.value = 1
 				}
@@ -439,7 +475,7 @@ new (class JungleFarmScript {
 
 		this.setMediumCampsLvl.OnValue(() => {
 			for (const spot of jungleSpots) {
-				if (spot.name.includes("sredniy")) {
+				if (spot.type === CampType.Medium) {
 					const slider = this.spotLevelSliders.get(spot.name)
 					if (slider) slider.value = 4
 				}
@@ -449,12 +485,12 @@ new (class JungleFarmScript {
 
 		this.setLargeCampsLvl.OnValue(() => {
 			for (const spot of jungleSpots) {
-				if (!spot.name.includes("malenkiy") && !spot.name.includes("sredniy")) {
+				if (spot.type === CampType.Large || spot.type === CampType.Ancient) {
 					const slider = this.spotLevelSliders.get(spot.name)
 					if (slider) slider.value = 5
 				}
 			}
-			this.Log("Установлен 5 лвл для всех больших и остальных кемпов")
+			this.Log("Установлен 5 лвл для всех больших и древних кемпов")
 		})
 
 		this.testSayButton.OnValue(() => {
@@ -653,10 +689,6 @@ new (class JungleFarmScript {
 		// Опускаем ниже и оставляем место под надпись
 		const logoPos = new Vector2(280, screenSize.y - imgHeight - 40)
 		
-		// Легкое свечение/фон для логотипа и текста
-		RendererSDK.FilledRect(logoPos.AddScalar(-5), new Vector2(imgWidth + 10, imgHeight + 35), new Color(0, 0, 0, 100))
-		RendererSDK.OutlinedRect(logoPos.AddScalar(-5), new Vector2(imgWidth + 10, imgHeight + 35), 1, new Color(255, 215, 0, 50))
-		
 		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
 		
 		// Золотая надпись BehUp.online с эффектом объема
@@ -828,9 +860,31 @@ new (class JungleFarmScript {
 							color = Color.Green.SetA(150)
 						}
 
-						RendererSDK.FilledCircle(screenPos, new Vector2(10, 10), color)
-						const text = `${spot.name}${!isLevelValid ? ` [Lvl ${minLevel}]` : ""}`
-						RendererSDK.Text(text, screenPos.AddScalarY(15), color, "Roboto", 12)
+						// Premium Marker: Diamond shape with outline
+						const markerPos = screenPos.Subtract(new Vector2(6, 6))
+						const markerSize = new Vector2(12, 12)
+						
+						// Shadow/Glow effect
+						RendererSDK.FilledRect(markerPos.Subtract(new Vector2(1, 1)), markerSize.Add(new Vector2(2, 2)), new Color(0, 0, 0, 150), 45)
+						
+						// Main Marker
+						RendererSDK.FilledRect(markerPos, markerSize, color, 45)
+						RendererSDK.OutlinedRect(markerPos, markerSize, 1, color.SetA(255), 45)
+
+						// Labels with shadows
+						const nameText = spot.name
+						const statusText = !isLevelValid ? `[LVL ${minLevel}+]` : (this.emptySpots.has(spot.name) ? "PУСТО" : "READY")
+						
+						const nameColor = color.SetA(255)
+						const statusColor = this.emptySpots.has(spot.name) ? Color.Red.SetA(200) : (isLevelValid ? Color.Green.SetA(200) : Color.Gray.SetA(200))
+
+						// Draw Name
+						RendererSDK.Text(nameText, screenPos.AddScalarY(14).AddScalarX(1), Color.Black, "Roboto", 11, 600)
+						RendererSDK.Text(nameText, screenPos.AddScalarY(14), nameColor, "Roboto", 11, 600)
+						
+						// Draw Status
+						RendererSDK.Text(statusText, screenPos.AddScalarY(26).AddScalarX(1), Color.Black, "Roboto", 9, 400)
+						RendererSDK.Text(statusText, screenPos.AddScalarY(26), statusColor, "Roboto", 9, 400)
 					}
 				}
 			}
@@ -1381,18 +1435,24 @@ new (class JungleFarmScript {
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
 			if (this.collectLotuses.value && gameTime > 180) {
 				const cycle = Math.floor(gameTime / 180)
-				const window = 45 // 45 секунд после спавна пытаемся забрать
 				
-				if (gameTime % 180 < window) {
-					if (this.currentFarmMode === "lotus" && this.currentLotusSpot) {
+				// Если мы в режиме лотоса, продолжаем сбор
+				if (this.currentFarmMode === "lotus" && this.currentLotusSpot) {
+					// Если цикл уже прошел, сбрасываем режим
+					if (this.lastLotusPickCycle >= cycle) {
+						this.currentFarmMode = "none"
+						this.currentLotusSpot = null
+						this.lotusArrivalTime = 0
+					} else {
 						const dist = hero.Distance2D(this.currentLotusSpot.pos)
 						this.targetPos = this.currentLotusSpot.pos
 						
-						if (dist > 100) {
+						if (dist > 250) {
 							this.setStatus(`Сбор лотоса: ${this.currentLotusSpot.name}`)
 							hero.MoveTo(this.currentLotusSpot.pos, false, true)
 							this.lastOrderTime = rawTime
-							this.lotusArrivalTime = 0
+							// Сбрасываем время прибытия только если мы действительно далеко
+							if (dist > 500) this.lotusArrivalTime = 0
 							return true
 						} else {
 							if (this.lotusArrivalTime === 0) {
@@ -1410,38 +1470,40 @@ new (class JungleFarmScript {
 								this.lotusArrivalTime = 0
 							}
 						}
-					} else if (this.lastLotusPickCycle < cycle) {
-						for (const spot of lotusSpots) {
-							if (hero.Distance2D(spot.pos) < this.lotusPickRadius.value) {
-								this.currentLotusSpot = spot
-								this.currentFarmMode = "lotus"
-								this.lastModeSwitchTime = rawTime
-								this.lotusArrivalTime = 0
-								return true
-							}
+					}
+				} else if (this.lastLotusPickCycle < cycle) {
+					// Ищем ближайший лотос для начала сбора
+					for (const spot of lotusSpots) {
+						if (hero.Distance2D(spot.pos) < this.lotusPickRadius.value) {
+							this.currentLotusSpot = spot
+							this.currentFarmMode = "lotus"
+							this.lastModeSwitchTime = rawTime
+							this.lotusArrivalTime = 0
+							return true
 						}
 					}
-				} else if (this.currentFarmMode === "lotus") {
-					this.currentFarmMode = "none"
-					this.currentLotusSpot = null
 				}
 			}
 
 			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
 			if (this.collectWisdom.value && gameTime > 420) {
 				const cycle = Math.floor(gameTime / 420)
-				const window = 60 // 1 минута после спавна пытаемся забрать
 				
-				if (gameTime % 420 < window) {
-					if (this.currentFarmMode === "wisdom" && this.currentWisdomSpot) {
+				if (this.currentFarmMode === "wisdom" && this.currentWisdomSpot) {
+					// Если цикл уже прошел, сбрасываем режим
+					if (this.lastWisdomPickCycle >= cycle) {
+						this.currentFarmMode = "none"
+						this.currentWisdomSpot = null
+						this.wisdomArrivalTime = 0
+					} else {
 						const dist = hero.Distance2D(this.currentWisdomSpot.pos)
 						this.targetPos = this.currentWisdomSpot.pos
 						
-						if (dist > 100) {
+						if (dist > 250) {
 							this.setStatus(`Сбор опыта: ${this.currentWisdomSpot.name}`)
 							hero.MoveTo(this.currentWisdomSpot.pos, false, true)
 							this.lastOrderTime = rawTime
-							this.wisdomArrivalTime = 0
+							if (dist > 500) this.wisdomArrivalTime = 0
 							return true
 						} else {
 							if (this.wisdomArrivalTime === 0) {
@@ -1449,7 +1511,7 @@ new (class JungleFarmScript {
 							}
 							
 							if (rawTime < this.wisdomArrivalTime + 4.1) {
-								this.setStatus(`Сбор опыта (4 сек): ${Math.ceil(4.1 - (rawTime - this.wisdomArrivalTime))}с`)
+								this.setStatus(`Сбор опыта (4 сек): ${Math.max(0, Math.ceil(4.1 - (rawTime - this.wisdomArrivalTime)))}с`)
 								return true
 							} else {
 								this.Log(`Опыт собран в цикле ${cycle}`)
@@ -1459,20 +1521,17 @@ new (class JungleFarmScript {
 								this.wisdomArrivalTime = 0
 							}
 						}
-					} else if (this.lastWisdomPickCycle < cycle) {
-						for (const spot of wisdomSpots) {
-							if (hero.Distance2D(spot.pos) < this.wisdomPickRadius.value) {
-								this.currentWisdomSpot = spot
-								this.currentFarmMode = "wisdom"
-								this.lastModeSwitchTime = rawTime
-								this.wisdomArrivalTime = 0
-								return true
-							}
+					}
+				} else if (this.lastWisdomPickCycle < cycle) {
+					for (const spot of wisdomSpots) {
+						if (hero.Distance2D(spot.pos) < this.wisdomPickRadius.value) {
+							this.currentWisdomSpot = spot
+							this.currentFarmMode = "wisdom"
+							this.lastModeSwitchTime = rawTime
+							this.wisdomArrivalTime = 0
+							return true
 						}
 					}
-				} else if (this.currentFarmMode === "wisdom") {
-					this.currentFarmMode = "none"
-					this.currentWisdomSpot = null
 				}
 			}
 
