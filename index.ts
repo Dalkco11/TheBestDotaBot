@@ -9,8 +9,6 @@ import {
 	InputManager,
 	LocalPlayer,
 	Menu,
-	Player,
-	PlayerResource,
 	RendererSDK,
 	Rune,
 	Tower,
@@ -56,6 +54,8 @@ interface UnitState {
 	currentWisdomSpot: WisdomSpot | null
 	wisdomArrivalTime: number
 	lastWisdomPickCycle: number
+	lastPosForStuckCheck: Vector3 | undefined
+	stuckCheckTime: number
 }
 
 interface LotusSpot {
@@ -244,7 +244,6 @@ new (class JungleFarmScript {
 	private readonly emptySpots: Set<string> = new Set()
 	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
-	private readonly visibleSymbol = typeof Panorama !== 'undefined' ? Panorama.MakeSymbol("Visible") : null
 	private lastPanoramaTime = 0
 	private lastMinute = -1
 	private lastLaneCreepVisibleTime = 0
@@ -265,6 +264,8 @@ new (class JungleFarmScript {
 	private currentWisdomSpot: WisdomSpot | null = null
 	private wisdomArrivalTime: number = 0
 	private lastWisdomPickCycle: number = -1
+	private lastPosForStuckCheck: Vector3 | undefined
+	private stuckCheckTime: number = 0
 	private readonly occupiedSpots: Map<string, number> = new Map()
 	private lastCreepDeathPos: Vector3 | undefined
 	private lastRandomWalkPos: Vector3 | undefined
@@ -537,6 +538,8 @@ new (class JungleFarmScript {
 		this.lastRandomWalkPos = undefined
 		this.lastRandomWalkPosUpdateTime = 0
 		this.lastCameraLock = false
+		this.lastPosForStuckCheck = undefined
+		this.stuckCheckTime = 0
 		this.lastDamageTime = 0
 		this.lastHeroAttackerTime = 0
 		this.lastHeroChatTime = 0
@@ -567,7 +570,9 @@ new (class JungleFarmScript {
 				lastLotusPickCycle: -1,
 				currentWisdomSpot: null,
 				wisdomArrivalTime: 0,
-				lastWisdomPickCycle: -1
+				lastWisdomPickCycle: -1,
+				lastPosForStuckCheck: undefined,
+				stuckCheckTime: 0
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -588,6 +593,8 @@ new (class JungleFarmScript {
 		this.currentWisdomSpot = state.currentWisdomSpot
 		this.wisdomArrivalTime = state.wisdomArrivalTime
 		this.lastWisdomPickCycle = state.lastWisdomPickCycle
+		this.lastPosForStuckCheck = state.lastPosForStuckCheck
+		this.stuckCheckTime = state.stuckCheckTime
 	}
 
 	private SaveUnitState(unit: Unit): void {
@@ -610,6 +617,8 @@ new (class JungleFarmScript {
 			state.currentWisdomSpot = this.currentWisdomSpot
 			state.wisdomArrivalTime = this.wisdomArrivalTime
 			state.lastWisdomPickCycle = this.lastWisdomPickCycle
+			state.lastPosForStuckCheck = this.lastPosForStuckCheck
+			state.stuckCheckTime = this.stuckCheckTime
 		}
 	}
 
@@ -684,26 +693,29 @@ new (class JungleFarmScript {
 		const screenSize = RendererSDK.WindowSize
 
 		// Draw the main logo permanently right of the minimap
-		const imgWidth = 221
-		const imgHeight = 221
-		// Опускаем ниже и оставляем место под надпись
-		const logoPos = new Vector2(280, screenSize.y - imgHeight - 40)
+		const imgWidth = 188 // 221 - 15%
+		const imgHeight = 188
+		const logoPos = new Vector2(280, screenSize.y - imgHeight - 45)
 		
+		// Ensure no background is drawn under the logo (removed any potential rects)
 		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
 		
-		// Золотая надпись BehUp.online с эффектом объема
+		// Premium Golden Inscription BehUp.online
 		const brandText = "BehUp.online"
-		const fontSize = 18
+		const fontSize = 17
 		const textSize = RendererSDK.GetTextSize(brandText, "Roboto", fontSize, 400)
 		const textPos = new Vector2(
 			logoPos.x + (imgWidth - textSize.x) / 2,
-			logoPos.y + imgHeight + 5
+			logoPos.y + imgHeight + 2
 		)
 		
-		// Тень для текста
-		RendererSDK.Text(brandText, textPos.AddScalar(1), new Color(0, 0, 0, 255), "Roboto", fontSize, 800)
-		// Основной золотой текст
-		RendererSDK.Text(brandText, textPos, new Color(255, 215, 0), "Roboto", fontSize, 800)
+		// Text shadows for volume effect
+		RendererSDK.Text(brandText, textPos.AddScalar(1), new Color(0, 0, 0, 200), "Roboto", fontSize, 900)
+		RendererSDK.Text(brandText, textPos.AddScalarY(1), new Color(139, 69, 19, 200), "Roboto", fontSize, 900) // Dark gold/bronze shadow
+		
+		// Gradient-like gold effect (layered)
+		RendererSDK.Text(brandText, textPos, new Color(255, 215, 0), "Roboto", fontSize, 900) // Main Gold
+		RendererSDK.Text(brandText, textPos.AddScalarY(-0.5), new Color(255, 255, 255, 40), "Roboto", fontSize, 900) // Top highlight
 
 		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
 			const mouseWorld = InputManager.CursorOnWorld
@@ -1097,62 +1109,10 @@ new (class JungleFarmScript {
 		// Проверка нейтрального слота (16) строго через Inventory.GetItem
 		const neutralItem = hero.Inventory.GetItem(16)
 		
-		// Если слот пуст (null), пробуем открыть меню или выбрать предмет
 		if (!neutralItem) {
-			if (typeof Panorama !== 'undefined') {
-				const dotaHud = Panorama.FindRootPanel("DotaHud")
-				if (dotaHud) {
-					const playerID = hero.PlayerID
-					const playerData = PlayerResource?.GetPlayerDataByPlayerID(playerID)
-					if (playerData) {
-						const hasNeutralTier = playerData.HasNeutralTier // Массив boolean для каждого тира
-						const hasRedeemedNeutralTier = playerData.HasRedeemedNeutralTier // Массив boolean, был ли уже выбран предмет
-
-						for (let tier = 0; tier < hasNeutralTier.length; tier++) {
-							if (hasNeutralTier[tier] && !hasRedeemedNeutralTier[tier]) {
-								const neutralPicker = dotaHud.FindChildTraverse("NeutralItemPicker")
-								const isPickerVisible = neutralPicker && (this.visibleSymbol ? neutralPicker.BHasClass(this.visibleSymbol) : false || neutralPicker.GetActualLayoutWidth() > 0)
-								
-								if (!isPickerVisible) {
-									this.Log(`Есть доступный жетон тира ${tier + 1}. Пытаюсь открыть меню.`)
-									const neutralSlot = dotaHud.FindChildTraverse("neutral_item_slot") ?? dotaHud.FindChildTraverse("NeutralSlot")
-									if (neutralSlot) {
-										Panorama.DispatchEventAsync("Activated(program)", neutralSlot)
-										this.lastOrderTime = GameState.RawGameTime
-										return
-									}
-								} else {
-									// Если меню открыто, пробуем отправить приказ на выбор первого предмета
-									if (typeof (Player as any).PrepareUnitOrders === 'function') {
-										(Player as any).PrepareUnitOrders({
-											Order: 34,
-											TargetIndex: 0,
-											EntityIndex: hero.Index,
-											Position: new Vector3(0, 0, 0),
-											AbilityIndex: 0,
-											Queue: false
-										})
-										this.Log("Меню открыто, отправлен приказ на выбор (Order 34)")
-										return
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Резервный вариант: если Panorama недоступна, пробуем отправить приказ напрямую
-			if (typeof (Player as any).PrepareUnitOrders === 'function') {
-				(Player as any).PrepareUnitOrders({
-					Order: 34,
-					TargetIndex: 0,
-					EntityIndex: hero.Index,
-					Position: new Vector3(0, 0, 0),
-					AbilityIndex: 0,
-					Queue: false
-				})
-			}
+			// На данном API автоматический выбор (использование жетона/токена) невозможен.
+			// Valve блокирует программные клики (DispatchEvent) по основному HUD, а 
+			// специфичного приказа для выбора одного из 5 предметов нет в dotaunitorder_t (появилось в 7.33+).
 		} else if (this.useNeutral.value && hero.IsAttacking) {
 			// Авто-использование уже экипированного предмета
 			if (neutralItem.IsReady) {
@@ -1750,6 +1710,24 @@ new (class JungleFarmScript {
 				}
 
 				const dist = hero.Distance2D(nearestSpot.pos)
+
+				if (rawTime > this.stuckCheckTime + 4.0) {
+					if (this.lastPosForStuckCheck && hero.Distance2D(this.lastPosForStuckCheck) < 75) {
+						if (dist < 700) {
+							this.Log(`Спот ${nearestSpot.name} помечен пустым (Застревание, dist: ${Math.floor(dist)})`, hero)
+							this.emptySpots.add(nearestSpot.name)
+							this.currentJungleSpotName = null
+							this.lastOrderTime = 0
+							this.lastSpotArrivalTime = 0
+							this.lastPosForStuckCheck = undefined
+							this.stuckCheckTime = rawTime
+							return true
+						}
+					}
+					this.lastPosForStuckCheck = hero.Position
+					this.stuckCheckTime = rawTime
+				}
+
 				if (dist > 300) {
 					this.setStatus(`Путь в лес: ${nearestSpot.name}`)
 					this.lastSpotArrivalTime = 0 // Сбрасываем время прибытия, пока мы в пути
