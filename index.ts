@@ -264,21 +264,6 @@ new (class JungleFarmScript {
 	private readonly logBuffer: string[] = []
 	private readonly maxLogLines = 15
 
-	private readonly notificationMessages: string[] = [
-		"Эксклюзивно для вас: промокод MIKE дает скидку 5% на все услуги BehUp.online! Не упустите шанс!",
-		"Быстрое поднятие порядочности на BehUp.online! Забудьте о токсиках и наслаждайтесь игрой.",
-		"Снимем любые ограничения! Отмываем Low Priority быстро и без проблем на BehUp.online.",
-		"Ищете надежную привязку аккаунта? BehUp.online – ваш лучший выбор для безопасных сделок.",
-		"Надоели поражения? BehUp.online поможет вернуть вашу порядочность и насладиться победами!",
-		"Поднимите свою поряду с профессионалами! Только на BehUp.online – быстро, безопасно, эффективно."
-	]
-	private currentNotificationIndex: number = 0
-	private notificationDisplayTime: number = 0
-	private readonly notificationDuration: number = 7 // seconds
-	private readonly notificationFadeDuration: number = 1 // seconds
-	private lastNotificationUpdateTime: number = 0
-	private currentNotificationAlpha: number = 0 // for fading
-
 	private cachedTowers: Tower[] = []
 	private cachedCreeps: Creep[] = []
 	private cachedHeroes: Unit[] = []
@@ -337,56 +322,6 @@ new (class JungleFarmScript {
 		if (this.logBuffer.length > this.maxLogLines) {
 			this.logBuffer.shift()
 		}
-	}
-
-	private wrapText(text: string, font: string, fontSize: number, maxWidth: number): string[] {
-		const words = text.split(" ")
-		const lines: string[] = []
-		let currentLine = ""
-
-		for (const word of words) {
-			if (currentLine === "") {
-				const size = RendererSDK.GetTextSize(word, font, fontSize, maxWidth)
-				if (size.x <= maxWidth) {
-					currentLine = word
-				} else { // Слово слишком длинное, чтобы поместиться в одну строку
-					let tempWord = word
-					while (tempWord.length > 0) {
-						let part = tempWord
-						let sizePart = RendererSDK.GetTextSize(part, font, fontSize, maxWidth)
-						while (sizePart.x > maxWidth && part.length > 1) {
-							part = part.substring(0, part.length - 1)
-							sizePart = RendererSDK.GetTextSize(part, font, fontSize, maxWidth)
-						}
-						lines.push(part)
-						tempWord = tempWord.substring(part.length)
-						// Если осталась часть слова, но она все еще слишком длинная для новой строки, принудительно переносим
-						if (tempWord.length > 0 && RendererSDK.GetTextSize(tempWord, font, fontSize, maxWidth).x > maxWidth && part.length === 1) {
-							// Если однобуквенный перенос не помог, просто добавляем остаток
-							lines.push(tempWord)
-							tempWord = ""
-						}
-					}
-					currentLine = ""
-				}
-				continue
-			}
-
-			const testLine = currentLine + " " + word
-			const size = RendererSDK.GetTextSize(testLine, font, fontSize, maxWidth)
-			
-			if (size.x <= maxWidth) {
-				currentLine = testLine
-			} else {
-				lines.push(currentLine)
-				currentLine = word
-			}
-		}
-
-		if (currentLine.length > 0) {
-			lines.push(currentLine)
-		}
-		return lines
 	}
 
 	private setStatus(status: string): void {
@@ -716,65 +651,23 @@ new (class JungleFarmScript {
 
 		const screenSize = RendererSDK.WindowSize
 
-		// Draw dynamic notifications on the right side of the screen
-		const notificationWidth = 350
-		const notificationMargin = 10
-		const notificationTextSize = 16 // Уменьшенный размер шрифта
-		const notificationLineHeight = notificationTextSize + 2 // Отступ между строками
-		const notificationFont = "Roboto"
-		const notificationTextColor = new Color(255, 255, 255) // Белый цвет
-		const notificationBackgroundColor = new Color(0, 0, 0, 120) // Более прозрачный черный
-		const notificationBorderColor = new Color(255, 255, 255, 50) // Слегка видимая граница
-
-		const currentTime = GameState.RawGameTime || 0
-
-		// Update notification logic
-		if (currentTime - this.lastNotificationUpdateTime > this.notificationDuration + this.notificationFadeDuration * 2) {
-			this.currentNotificationIndex = (this.currentNotificationIndex + 1) % this.notificationMessages.length
-			this.lastNotificationUpdateTime = currentTime
-			this.notificationDisplayTime = 0
-		} else {
-			this.notificationDisplayTime = currentTime - this.lastNotificationUpdateTime
-		}
-
-		// Calculate alpha for fading effect
-		if (this.notificationDisplayTime < this.notificationFadeDuration) {
-			this.currentNotificationAlpha = (this.notificationDisplayTime / this.notificationFadeDuration) * 255
-		} else if (this.notificationDisplayTime > this.notificationDuration + this.notificationFadeDuration) {
-			this.currentNotificationAlpha = ((this.notificationDuration + this.notificationFadeDuration * 2 - this.notificationDisplayTime) / this.notificationFadeDuration) * 255
-		} else {
-			this.currentNotificationAlpha = 255
-		}
-
-		const currentMessage = this.notificationMessages[this.currentNotificationIndex]
-		const wrappedLines = this.wrapText(currentMessage, notificationFont, notificationTextSize, notificationWidth - notificationMargin * 2)
-		const notificationHeight = (wrappedLines.length * notificationLineHeight) + notificationMargin * 2
-
-
-		const notifBackgroundPosX = screenSize.x - notificationWidth - notificationMargin
-		const notifBackgroundPosY = notificationMargin
-
-		// Draw background with fading alpha
-		RendererSDK.FilledRect(new Vector2(notifBackgroundPosX, notifBackgroundPosY), new Vector2(notificationWidth, notificationHeight), new Color(0, 0, 0, Math.floor(this.currentNotificationAlpha)))
-		// Draw border
-		RendererSDK.OutlinedRect(new Vector2(notifBackgroundPosX, notifBackgroundPosY), new Vector2(notificationWidth, notificationHeight), 1, new Color(255, 255, 255, Math.floor(this.currentNotificationAlpha))) // 1 - толщина границы
-		// Draw text with fading alpha
-		for (let i = 0; i < wrappedLines.length; i++) {
-			const line = wrappedLines[i]
-			const textDrawPosY = notifBackgroundPosY + notificationMargin + i * notificationLineHeight
-			RendererSDK.Text(line, new Vector2(notifBackgroundPosX + notificationMargin + (notificationWidth - notificationMargin * 2 - RendererSDK.GetTextSize(line, notificationFont, notificationTextSize, notificationWidth).x) / 2, textDrawPosY), notificationTextColor.SetA(this.currentNotificationAlpha), notificationFont, notificationTextSize)
-		}
+		// Draw the main logo permanently right of the minimap
+		const imgWidth = 260
+		const imgHeight = 260
+		// Опускаем ниже: screenSize.y - imgHeight - 5 пикселей отступ снизу
+		const logoPos = new Vector2(280, screenSize.y - imgHeight - 5)
+		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
 
 		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
 			const mouseWorld = InputManager.CursorOnWorld
 			const text = `Mouse World: ${Math.floor(mouseWorld.x)}, ${Math.floor(mouseWorld.y)}, ${Math.floor(mouseWorld.z)}`
 			
-			// Позиция под уведомлениями
-			const posX = screenSize.x - notificationWidth - notificationMargin
-			const posY = notifBackgroundPosY + notificationHeight + 10
+			// Позиция в углу
+			const posX = screenSize.x - 300 - 10
+			const posY = 10
 			
-			RendererSDK.FilledRect(new Vector2(posX, posY), new Vector2(notificationWidth, 30), new Color(0, 0, 0, 150))
-			RendererSDK.OutlinedRect(new Vector2(posX, posY), new Vector2(notificationWidth, 30), 1, new Color(255, 255, 255, 50))
+			RendererSDK.FilledRect(new Vector2(posX, posY), new Vector2(300, 30), new Color(0, 0, 0, 150))
+			RendererSDK.OutlinedRect(new Vector2(posX, posY), new Vector2(300, 30), 1, new Color(255, 255, 255, 50))
 			RendererSDK.Text(text, new Vector2(posX + 10, posY + 5), Color.Yellow, "Roboto", 16)
 		}
 
