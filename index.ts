@@ -1211,11 +1211,11 @@ new (class JungleFarmScript {
 					if (this.currentFarmMode === "lane") {
 						// Если уже на линии, переходим в лес только если он значительно ближе и прошло время КД
 						const canSwitch = rawTime > this.lastModeSwitchTime + modeSwitchCooldown
-						shouldFarmLane = !canSwitch || (distToCreep < distToJungle + hysteresis)
+						shouldFarmLane = !canSwitch || (distToCreep < distToJungle + (2 * hysteresis))
 					} else if (this.currentFarmMode === "jungle") {
 						// Если уже в лесу, возвращаемся на линию только если она значительно ближе и прошло время КД
 						const canSwitch = rawTime > this.lastModeSwitchTime + modeSwitchCooldown
-						shouldFarmLane = canSwitch && (distToCreep < distToJungle - hysteresis)
+						shouldFarmLane = canSwitch && (distToCreep < distToJungle)
 					} else {
 						// Начальный выбор
 						shouldFarmLane = distToCreep < distToJungle
