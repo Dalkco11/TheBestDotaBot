@@ -22,6 +22,7 @@ import {
 	DOTA_UNIT_TARGET_TYPE
 } from "github.com/octarine-public/wrapper/index"
 
+
 enum CampType {
 	Small = "Маленький",
 	Medium = "Средний",
@@ -57,6 +58,50 @@ interface UnitState {
 	lastPosForStuckCheck: Vector3 | undefined
 	stuckCheckTime: number
 }
+
+interface WardSpot {
+	name: string
+	pos: Vector3
+	team: Team | "Any"
+}
+
+const jungleWardSpots: WardSpot[] = [
+	// --- RADIANT ---
+	{ name: "Radiant Top Jungle High", pos: new Vector3(-3500, 3100, 256), team: Team.Radiant },
+	{ name: "Radiant Top Jungle Exit", pos: new Vector3(-2800, 3800, 128), team: Team.Radiant },
+	{ name: "Radiant Mid Jungle (Pillar)", pos: new Vector3(-2000, -1500, 512), team: Team.Radiant },
+	{ name: "Radiant Mid Jungle Near T3", pos: new Vector3(-4500, -2800, 128), team: Team.Radiant },
+	{ name: "Radiant Bottom Jungle Cliff", pos: new Vector3(3000, -3500, 512), team: Team.Radiant },
+	{ name: "Radiant Bottom Secret Shop", pos: new Vector3(5000, -2000, 256), team: Team.Radiant },
+	{ name: "Radiant Triangle Highground", pos: new Vector3(-3000, -3000, 512), team: Team.Radiant },
+	{ name: "Radiant Triangle Entry", pos: new Vector3(-2200, -4200, 128), team: Team.Radiant },
+	{ name: "Radiant Jungle Bridge", pos: new Vector3(700, -1800, 128), team: Team.Radiant },
+	{ name: "Radiant Ancient Camp (Side)", pos: new Vector3(-2500, -5600, 128), team: Team.Radiant },
+
+	// --- DIRE ---
+	{ name: "Dire Bottom Jungle High", pos: new Vector3(3500, -3100, 256), team: Team.Dire },
+	{ name: "Dire Bottom Jungle Exit", pos: new Vector3(2800, -3800, 128), team: Team.Dire },
+	{ name: "Dire Mid Jungle (Pillar)", pos: new Vector3(2000, 1500, 512), team: Team.Dire },
+	{ name: "Dire Mid Jungle Near T3", pos: new Vector3(4500, 2800, 128), team: Team.Dire },
+	{ name: "Dire Top Jungle Cliff", pos: new Vector3(-3000, 3500, 512), team: Team.Dire },
+	{ name: "Dire Top Secret Shop", pos: new Vector3(-5000, 2000, 256), team: Team.Dire },
+	{ name: "Dire Triangle Highground", pos: new Vector3(3000, 3000, 512), team: Team.Dire },
+	{ name: "Dire Triangle Entry", pos: new Vector3(2200, 4200, 128), team: Team.Dire },
+	{ name: "Dire Jungle Bridge", pos: new Vector3(-700, 1800, 128), team: Team.Dire },
+	{ name: "Dire Ancient Camp (Side)", pos: new Vector3(2500, 5600, 128), team: Team.Dire },
+
+	// --- NEUTRAL / RIVER / RUNES ---
+	{ name: "Top Power Rune High", pos: new Vector3(-1600, 1000, 512), team: "Any" },
+	{ name: "Bottom Power Rune High", pos: new Vector3(1200, -1100, 512), team: "Any" },
+	{ name: "Roshan Entry Top", pos: new Vector3(-2200, 2200, 128), team: "Any" },
+	{ name: "Roshan Entry Bottom", pos: new Vector3(2200, -2200, 128), team: "Any" },
+	{ name: "Radiant Wisdom Rune", pos: new Vector3(-7800, -600, 256), team: Team.Radiant },
+	{ name: "Dire Wisdom Rune", pos: new Vector3(7800, 600, 256), team: Team.Dire },
+	{ name: "Top Outpost Cliff", pos: new Vector3(-5800, 4500, 512), team: "Any" },
+	{ name: "Bottom Outpost Cliff", pos: new Vector3(5800, -4500, 512), team: "Any" },
+	{ name: "Mid River Radiant Side", pos: new Vector3(-600, -600, 128), team: "Any" },
+	{ name: "Mid River Dire Side", pos: new Vector3(600, 600, 128), team: "Any" }
+]
 
 interface LotusSpot {
 	name: string
@@ -133,13 +178,13 @@ new (class JungleFarmScript {
 
 	private readonly laneNode = this.entry.AddNode("Настройки Линии", "", "Все, что касается фарма крипов на линии")
 	private readonly laneFarm = this.laneNode.AddToggle("Фарм линии", true, "Разрешить герою фармить крипов на линии")
-	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 1, "Герой будет игнорировать лес и фармить только линию до этого уровня")
-	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 1, "Сколько секунд ждать новую пачку на линии")
+	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 0, "Герой будет игнорировать лес и фармить только линию до этого уровня")
+	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 0, "Сколько секунд ждать новую пачку на линии")
 	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников", "Легкая линия", "Сложная линия"], 4, "Какую линию фармить в первую очередь (до уровня леса)")
 	private readonly randomWalkWaiting = this.laneNode.AddToggle("Случайная ходьба", true, "Активное движение в безопасной зоне при ожидании")
 	private readonly chaoticMoveAroundLastCreep = this.laneNode.AddToggle("Мансы у места смерти", true, "Движение вокруг позиции последнего убитого крипа")
 	private readonly laneTowerSafety = this.laneNode.AddToggle("Доп. радиус от башен", true, "Увеличивает безопасную дистанцию до башен на стадии линии")
-	private readonly laneTowerRadius = this.laneNode.AddSlider("Радиус отступа (линия)", 150, 0, 500, 1, "На сколько единиц дальше держаться от радиуса атаки башни")
+	private readonly laneTowerRadius = this.laneNode.AddSlider("Радиус отступа (линия)", 150, 0, 500, 0, "На сколько единиц дальше держаться от радиуса атаки башни")
 	private readonly fleeFromCreepsUnderTower = this.laneNode.AddToggle("Отход при уроне под башней", true, "Уходить, если крипы под башней бьют вас, а вы их нет")
 
 	private readonly jungleNode = this.entry.AddNode("Настройки Леса", "", "Настройки фарма нейтральных крипов")
@@ -147,14 +192,18 @@ new (class JungleFarmScript {
 	private readonly moveOnlyBetweenCamps = this.jungleNode.AddToggle("MoveTo между кемпами", true, "Не отвлекаться на героев при перебежках")
 	private readonly skipIfAllyFarming = this.jungleNode.AddToggle("Пропускать занятые союзником", true, "Не мешать союзникам фармить")
 	private readonly skipIfEnemyFarming = this.jungleNode.AddToggle("Пропускать занятые врагом", true, "Избегать стычек на спотах")
+	private readonly autoStack = this.jungleNode.AddToggle("Стакать лагеря", true, "Автоматически стакать ближайший лагерь в X:53")
+	private readonly stackRadius = this.jungleNode.AddSlider("Радиус для стака", 2000, 500, 5000, 0, "Максимальное расстояние до лагеря для попытки стака")
 	private readonly spotsNode = this.jungleNode.AddNode("Лесные лагеря", "", "Включение/выключение конкретных точек фарма")
 
 	private readonly safetyNode = this.entry.AddNode("Безопасность", "", "Настройки выживания и фильтры целей")
 	private readonly avoidTowers = this.safetyNode.AddToggle("Обходить башни", true, "Автоматический поиск пути в обход радиуса атак башен")
-	private readonly hpThreshold = this.safetyNode.AddSlider("Порог здоровья %", 22, 0, 100, 1, "При каком HP идти лечиться на базу")
+	private readonly hpThreshold = this.safetyNode.AddSlider("Порог здоровья %", 22, 0, 100, 0, "При каком HP идти лечиться на базу")
 	private readonly autoTpLowHp = this.safetyNode.AddToggle("Авто-ТП на базу", true, "Использовать свиток телепортации, если HP ниже порога")
 	private readonly ignoreHeroes = this.safetyNode.AddToggle("Игнорировать героев", true, "Не атаковать героев при фарме")
 	private readonly ignoreMid = this.safetyNode.AddToggle("Игнорировать мид", true, "Не ходить на центральную линию")
+	private readonly autoWard = this.safetyNode.AddToggle("Авто-вардинг", true, "Автоматически ставить варды, если они есть в инвентаре")
+	private readonly wardRadius = this.safetyNode.AddSlider("Радиус активации варда", 1200, 500, 3000, 0, "Если бот пробегает в этом радиусе от точки, он поставит вард")
 
 	private readonly ignoreUnitsNode = this.entry.AddNode("Игнор юнитов", "", "Список юнитов, которых скрипт будет игнорировать")
 	private readonly ignoreBroodlings = this.ignoreUnitsNode.AddToggle("Паучки Бруды", true)
@@ -174,7 +223,7 @@ new (class JungleFarmScript {
 	private readonly useQuelling = this.itemsNode.AddToggle("Quelling Blade", true)
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
 	private readonly autoLotus = this.itemsNode.AddToggle("Использовать лотосы", true)
-	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 1)
+	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 0)
 
 	private readonly abilitiesNode = this.autoNode.AddNode("Авто-способности")
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
@@ -186,15 +235,15 @@ new (class JungleFarmScript {
 
 	private readonly lotusNode = this.entry.AddNode("Настройки Лотосов", "", "Автосбор лотосов каждые 3 минуты")
 	private readonly collectLotuses = this.lotusNode.AddToggle("Собирать лотосы", true, "Заходить в радиус лотос-пула каждые 3 минуты")
-	private readonly lotusPickRadius = this.lotusNode.AddSlider("Радиус активации", 1500, 500, 3000, 100, "Если бот пробегает в этом радиусе от пула, он зайдет за лотосом")
+	private readonly lotusPickRadius = this.lotusNode.AddSlider("Радиус активации", 1500, 500, 3000, 0, "Если бот пробегает в этом радиусе от пула, он зайдет за лотосом")
 
 	private readonly wisdomNode = this.entry.AddNode("Настройки Опыта", "", "Автосбор бассейнов опыта каждые 7 минут")
 	private readonly collectWisdom = this.wisdomNode.AddToggle("Собирать опыт", true, "Заходить в радиус бассейна опыта каждые 7 минут")
-	private readonly wisdomPickRadius = this.wisdomNode.AddSlider("Радиус активации", 2500, 500, 4000, 100, "Если бот пробегает в этом радиусе от бассейна, он зайдет за опытом")
+	private readonly wisdomPickRadius = this.wisdomNode.AddSlider("Радиус активации", 2500, 500, 4000, 0, "Если бот пробегает в этом радиусе от бассейна, он зайдет за опытом")
 	private readonly useTargetedHeroes = this.abilitiesNode.AddToggle("Цели: Вражеские герои", true)
 	private readonly useTargetedAllies = this.abilitiesNode.AddToggle("Цели: Союзники", true)
 	private readonly useTargetedSelf = this.abilitiesNode.AddToggle("Цели: На себя", true)
-	private readonly manaThreshold = this.abilitiesNode.AddSlider("Мин. мана %", 30, 0, 100, 1)
+	private readonly manaThreshold = this.abilitiesNode.AddSlider("Мин. мана %", 30, 0, 100, 0)
 	private readonly enabledSpells: Map<string, Menu.Toggle> = new Map()
 	private readonly spellsWhitelistNode = this.abilitiesNode.AddNode("Белый список")
 
@@ -225,9 +274,9 @@ new (class JungleFarmScript {
 	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", true, "Показывать уведомление при получении урона от вражеского героя")
 	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", true, "Писать в чат просьбу не бить при получении урона от героя")
 	private readonly chatOnHeroDeath = this.debugNode.AddToggle("Чат при смерти", true, "Писать в чат сообщение при смерти от вражеского героя")
-	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 1, "На какой минуте игры автоматически включить скрипт")
+	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 0, "На какой минуте игры автоматически включить скрипт")
 	private readonly lanePriorityUntil4 = this.debugNode.AddToggle("Приоритет на линии до 4 лвл", true, "Сначала бить крипов на линии, а потом уже идти на кемпы (до 4 уровня)")
-	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 1, "С какого уровня героя начнет работать отправка сообщений в чат")
+	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 0, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly setSmallCampsLvl = this.debugNode.AddButton("Авто: Маленькие кемпы (1 лвл)", "Установить уровень 1 для всех маленьких лагерей")
 	private readonly setMediumCampsLvl = this.debugNode.AddButton("Авто: Средние кемпы (4 лвл)", "Установить уровень 4 для всех средних лагерей")
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
@@ -242,6 +291,7 @@ new (class JungleFarmScript {
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
 	private readonly spotLevelSliders: Map<string, Menu.Slider> = new Map()
+
 	private readonly emptySpots: Set<string> = new Set()
 	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
@@ -460,7 +510,7 @@ new (class JungleFarmScript {
 				defaultLvl = 4
 			}
 
-			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", defaultLvl, 1, 30, 1))
+			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", defaultLvl, 1, 30, 0))
 		}
 
 		this.toggleKey.OnPressed(() => {
@@ -819,7 +869,7 @@ new (class JungleFarmScript {
 				if (typeof IOBuffer[0] === 'number') {
 					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
 					const isCentered = hero.Distance2D(camPos) <= 100
-					
+
 					if (!this.lastCameraLock || (!isCentered && GameState.RawGameTime > this.lastCameraLockTime + 1.0)) {
 						this.SafeExecuteCommand("dota_camera_lock 1")
 						this.lastCameraLock = true
@@ -989,8 +1039,38 @@ new (class JungleFarmScript {
 				const timeStr = `${time < 0 ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
 				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, 350), Color.White.SetA(200), "Roboto", 20)
 			}
+
+			// Отрисовка точек для вардинга
+			this.DrawWardSpots(hero)
 		} catch (e) {
 			this.Log(`Draw Error: ${e}`)
+		}
+
+	}
+
+	private DrawWardSpots(hero: Unit): void {
+		if (!this.autoWard.value) return
+
+		const observer = hero.GetItemByName("item_ward_observer")
+		const sentry = hero.GetItemByName("item_ward_sentry")
+		if (!observer && !sentry) return
+
+		for (const spot of jungleWardSpots) {
+			const screenPos = RendererSDK.WorldToScreen(spot.pos)
+			if (screenPos) {
+				const dist = hero.Distance2D(spot.pos)
+				const isNearby = dist < this.wardRadius.value
+
+				// Если рядом - светим ярко желтым/синим, если далеко - тускло белым
+				const color = isNearby ? new Color(255, 255, 0, 200) : new Color(255, 255, 255, 60)
+
+				RendererSDK.OutlinedCircle(screenPos, new Vector2(15, 15), color, 2)
+				RendererSDK.Text("WARD", screenPos.AddScalarY(-20), color, "Roboto", 10, 600)
+
+				if (isNearby) {
+					RendererSDK.Text(spot.name, screenPos.AddScalarY(20), color, "Roboto", 10, 400)
+				}
+			}
 		}
 	}
 
@@ -1016,6 +1096,9 @@ new (class JungleFarmScript {
 
 			// Глобальное отслеживание фарма союзников
 			this.TrackGlobalJungleStatus(hero)
+
+			// Авто-вардинг
+			this.HandleAutoWarding(hero)
 
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
 			const currentMinute = Math.floor(gameTime / 60)
@@ -1427,8 +1510,52 @@ new (class JungleFarmScript {
 				this.isEscapingTower = false
 			}
 
-			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
+			// Логика стакания лагерей в X:53
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
+			const secs = Math.floor(gameTime % 60)
+
+			if (this.autoStack.value && gameTime > 60) {
+				const nearestStackSpot = this.GetNearestEnabledSpot(hero)
+				if (nearestStackSpot && hero.Distance2D(nearestStackSpot.pos) < this.stackRadius.value) {
+					if (secs >= 48 && secs <= 56) {
+						this.targetPos = nearestStackSpot.pos
+						const dist = hero.Distance2D(nearestStackSpot.pos)
+
+						if (secs >= 48 && secs <= 52) {
+							if (dist > 300) {
+								this.setStatus(`Подготовка к стаку: ${nearestStackSpot.name}`)
+								hero.MoveTo(this.GetRandomizedPosition(nearestStackSpot.pos, 100), false, true)
+								this.lastOrderTime = rawTime
+								return true
+							} else {
+								this.setStatus(`Ожидание X:53 для стака: ${nearestStackSpot.name}`)
+								return true
+							}
+						} else if (secs === 53) {
+							const neutrals = this.cachedCreeps.filter(c =>
+								c.IsEnemy(hero) && c.IsNeutral && c.IsAlive && c.IsVisible &&
+								c.Distance2D(nearestStackSpot.pos) < 700
+							)
+							if (neutrals.length > 0) {
+								const target = neutrals[0]
+								this.setStatus(`Удар для стака: ${nearestStackSpot.name}`)
+								hero.AttackTarget(target, false, true)
+								this.lastOrderTime = rawTime
+								return true
+							}
+						} else if (secs >= 54 && secs <= 56) {
+							this.setStatus(`Отвод крипов для стака: ${nearestStackSpot.name}`)
+							const dirAway = hero.Position.Subtract(nearestStackSpot.pos).Normalize()
+							const pullPos = hero.Position.Add(dirAway.MultiplyScalar(1000))
+							hero.MoveTo(this.GetRandomizedPosition(pullPos, 200), false, true)
+							this.lastOrderTime = rawTime
+							return true
+						}
+					}
+				}
+			}
+
+			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
 			if (this.collectLotuses.value && gameTime > 180) {
 				const cycle = Math.floor(gameTime / 180)
 
@@ -2076,6 +2203,40 @@ new (class JungleFarmScript {
 			if (this.IsInTowerRange(checkPos, hero, 50)) return true
 		}
 		return false
+	}
+
+	private HandleAutoWarding(hero: Unit): void {
+		if (!this.autoWard.value) return
+
+		const observer = hero.GetItemByName("item_ward_observer")
+		const sentry = hero.GetItemByName("item_ward_sentry")
+		if (!observer && !sentry) return
+
+		const ward = (observer && observer.IsReady) ? observer : ((sentry && sentry.IsReady) ? sentry : null)
+		if (!ward) return
+
+		const rawTime = GameState.RawGameTime
+		if (rawTime < this.lastOrderTime + 1.0) return // Задержка между любыми ордерами
+
+		for (const spot of jungleWardSpots) {
+			const dist = hero.Distance2D(spot.pos)
+			if (dist < this.wardRadius.value) {
+				// Проверяем, нет ли уже нашего варда в этой точке (радиус 400)
+				const existingWards = this.SafeGetEntities<Unit>(Unit).filter(u =>
+					(u.Name === "npc_dota_observer_wards" || u.Name === "npc_dota_sentry_wards") &&
+					!u.IsEnemy(hero) &&
+					u.Distance2D(spot.pos) < 400
+				)
+
+				if (existingWards.length === 0) {
+					this.Log(`Авто-вардинг: Ставлю вард в точку ${spot.name}`)
+					hero.CastPosition(ward, spot.pos, false, true)
+					this.lastOrderTime = rawTime
+					this.nextOrderDelay = 0.5
+					return // Только один вард за раз
+				}
+			}
+		}
 	}
 
 	private GetDefaultLanePos(hero: Unit): Vector3 {
