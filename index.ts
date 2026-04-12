@@ -206,7 +206,6 @@ new (class JungleFarmScript {
 	private readonly drawRoute = this.visualNode.AddToggle("Рисовать маршрут", true)
 	private readonly drawRouteStyle = this.visualNode.AddDropdown("Стиль маршрута", ["Линия", "Стрелки"], 0, "Визуальный стиль отрисовки маршрута")
 	private readonly drawRouteColor = this.visualNode.AddColorPicker("Цвет маршрута", new Color(128, 0, 128).SetA(255), "Цвет отрисовываемого маршрута")
-	private readonly lockCamera = this.visualNode.AddToggle("Центрировать камеру", false)
 
 	private readonly testNode = this.entry.AddNode("Тест (Экспериментально)", "", "Функции для тестирования APM и скорости")
 	private readonly fastLogic = this.testNode.AddToggle("Быстрая логика", false, "Снижает задержку раздумий до 60мс (вместо 100мс)")
@@ -215,6 +214,7 @@ new (class JungleFarmScript {
 	private readonly experimentalOrbWalk = this.testNode.AddToggle("Orb-Walking", false, "Экспериментальная отмена анимации после выстрела/удара")
 
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
+	private readonly lockCamera = this.debugNode.AddToggle("Центрировать камеру", false, "Принудительно центрировать камеру (dota_camera_lock)")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
 	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
 	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
@@ -273,6 +273,7 @@ new (class JungleFarmScript {
 	private lastRandomWalkPosUpdateTime = 0
 	private lastSpotArrivalTime = 0
 	private lastCameraLock = false
+	private lastCameraLockTime = 0
 	private lastDamageTime = 0
 	private lastLogicTime = 0
 	private lastBypassTime = 0
@@ -540,6 +541,7 @@ new (class JungleFarmScript {
 		this.lastRandomWalkPos = undefined
 		this.lastRandomWalkPosUpdateTime = 0
 		this.lastCameraLock = false
+		this.lastCameraLockTime = 0
 		this.lastPosForStuckCheck = undefined
 		this.stuckCheckTime = 0
 		this.lastDamageTime = 0
@@ -709,16 +711,16 @@ new (class JungleFarmScript {
 		const screenSize = RendererSDK.WindowSize
 
 		// Draw the main logo permanently right of the minimap
-		const imgWidth = 188 // 221 - 15%
-		const imgHeight = 188
-		const logoPos = new Vector2(280, screenSize.y - imgHeight - 45)
+		const imgWidth = 150
+		const imgHeight = 150
+		const logoPos = new Vector2(365, screenSize.y - imgHeight - 25)
 
 		// Ensure no background is drawn under the logo (removed any potential rects)
 		RendererSDK.Image("7.png", logoPos, -1, new Vector2(imgWidth, imgHeight))
 
 		// Premium Golden Inscription BehUp.online
 		const brandText = "BehUp.online"
-		const fontSize = 17
+		const fontSize = 15
 		const textSize = RendererSDK.GetTextSize(brandText, "Roboto", fontSize, 400)
 		const textPos = new Vector2(
 			logoPos.x + (imgWidth - textSize.x) / 2,
@@ -811,6 +813,25 @@ new (class JungleFarmScript {
 				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин)`)
 			}
 
+			// Lock camera on hero using console command with active check
+			if (this.state.value && this.lockCamera.value && typeof Camera !== 'undefined' && typeof IOBuffer !== 'undefined' && IOBuffer !== null) {
+				void Camera.Position // Touch to populate IOBuffer
+				if (typeof IOBuffer[0] === 'number') {
+					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
+					const isCentered = hero.Distance2D(camPos) <= 100
+					
+					if (!this.lastCameraLock || (!isCentered && GameState.RawGameTime > this.lastCameraLockTime + 1.0)) {
+						this.SafeExecuteCommand("dota_camera_lock 1")
+						this.lastCameraLock = true
+						this.lastCameraLockTime = GameState.RawGameTime
+					}
+				}
+			} else if (this.lastCameraLock) {
+				this.SafeExecuteCommand("dota_camera_lock 0")
+				this.lastCameraLock = false
+				this.lastCameraLockTime = 0
+			}
+
 			if (!this.state.value) return
 
 			// Skip logic if game hasn't truly started
@@ -854,20 +875,7 @@ new (class JungleFarmScript {
 				this.lastLogicTime = GameState.RawGameTime
 			}
 
-			// Lock camera on hero using console command with active check
-			if (this.lockCamera.value && typeof Camera !== 'undefined' && typeof IOBuffer !== 'undefined' && IOBuffer !== null) {
-				void Camera.Position // Touch to populate IOBuffer
-				if (typeof IOBuffer[0] === 'number') {
-					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
-					if (hero.Distance2D(camPos) > 100 || !this.lastCameraLock) {
-						this.SafeExecuteCommand("dota_camera_lock 1")
-						this.lastCameraLock = true
-					}
-				}
-			} else if (this.lastCameraLock) {
-				this.SafeExecuteCommand("dota_camera_lock 0")
-				this.lastCameraLock = false
-			}
+
 
 			// Visuals
 			if (this.drawSpots.value) {
