@@ -218,6 +218,8 @@ new (class JungleFarmScript {
 	private readonly autoNode = this.entry.AddNode("Автоматизация", "", "Авто-предметы и способности")
 	private readonly itemsNode = this.autoNode.AddNode("Авто-предметы")
 	private readonly usePhase = this.itemsNode.AddToggle("Phase Boots", true)
+	private readonly useArcanes = this.itemsNode.AddToggle("Arcane Boots", true)
+	private readonly useStick = this.itemsNode.AddToggle("Magic Stick / Wand", true)
 	private readonly useMom = this.itemsNode.AddToggle("Mask of Madness", true)
 	private readonly autoMidas = this.itemsNode.AddToggle("Hand of Midas", true)
 	private readonly useQuelling = this.itemsNode.AddToggle("Quelling Blade", true)
@@ -761,6 +763,7 @@ new (class JungleFarmScript {
 		const screenSize = RendererSDK.WindowSize
 
 		// Draw the main logo permanently right of the minimap
+		/*
 		const imgWidth = 150
 		const imgHeight = 150
 		const logoPos = new Vector2(365, screenSize.y - imgHeight - 25)
@@ -784,6 +787,7 @@ new (class JungleFarmScript {
 		// Gradient-like gold effect (layered)
 		RendererSDK.Text(brandText, textPos, new Color(255, 215, 0), "Roboto", fontSize, 900) // Main Gold
 		RendererSDK.Text(brandText, textPos.AddScalarY(-0.5), new Color(255, 255, 255, 40), "Roboto", fontSize, 900) // Top highlight
+		*/
 
 		if (this.showMousePos.value && typeof InputManager !== 'undefined') {
 			const mouseWorld = InputManager.CursorOnWorld
@@ -1252,6 +1256,27 @@ new (class JungleFarmScript {
 			if (phase?.IsReady && (!this.failedActions.has(phase.Name) || this.failedActions.get(phase.Name)! <= GameState.RawGameTime)) {
 				hero.CastNoTarget(phase, false, true)
 				this.failedActions.set(phase.Name, GameState.RawGameTime + 1.0)
+				this.lastOrderTime = GameState.RawGameTime
+				return true
+			}
+		}
+
+		const manaPercent = hero.ManaPercent
+		if (this.useArcanes.value && manaPercent < 80) {
+			const arcanes = hero.GetItemByName("item_arcane_boots")
+			if (arcanes?.IsReady && (!this.failedActions.has(arcanes.Name) || this.failedActions.get(arcanes.Name)! <= GameState.RawGameTime)) {
+				hero.CastNoTarget(arcanes, false, true)
+				this.failedActions.set(arcanes.Name, GameState.RawGameTime + 1.0)
+				this.lastOrderTime = GameState.RawGameTime
+				return true
+			}
+		}
+
+		if (this.useStick.value && manaPercent < 80) {
+			const stick = hero.GetItemByName(/item_magic_stick|item_magic_wand|item_holy_locket/)
+			if (stick?.IsReady && (stick as any).CurrentCharges > 0 && (!this.failedActions.has(stick.Name) || this.failedActions.get(stick.Name)! <= GameState.RawGameTime)) {
+				hero.CastNoTarget(stick, false, true)
+				this.failedActions.set(stick.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
 				return true
 			}
