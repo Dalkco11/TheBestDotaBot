@@ -503,10 +503,14 @@ new (class JungleFarmScript {
 		for (const spot of jungleSpots) {
 			const typeNode = campNodes.get(spot.type)!
 			const node = typeNode.AddNode(spot.name)
+			
+			// По дефолту включены все
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
 
 			let defaultLvl = 5
-			if (spot.type === CampType.Small) {
+			if (spot.name === "Rad Top (Small)" || spot.name === "Dire Bot (Small)") {
+				defaultLvl = 4
+			} else if (spot.type === CampType.Small) {
 				defaultLvl = 1
 			} else if (spot.type === CampType.Medium) {
 				defaultLvl = 4
@@ -1160,11 +1164,13 @@ new (class JungleFarmScript {
 				}
 			} else if (hpPercent > 95) {
 				const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value
-				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal && !canFarmJungle) {
+				// Возврат после хила работает только до 4 уровня включительно
+				if (this.isGoingToFountain && this.returnAfterHeal.value && this.lastPosBeforeHeal && !canFarmJungle && hero.Level <= 4) {
 					this.isReturningAfterHeal = true
 					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${this.lastPosBeforeHeal.x.toFixed(0)}, ${this.lastPosBeforeHeal.y.toFixed(0)}`)
-				} else if (this.isGoingToFountain && canFarmJungle) {
-					this.Log(`Здоровье восстановлено, уровень ${hero.Level} позволяет фармить лес, возврат на линию пропущен`)
+				} else if (this.isGoingToFountain && (canFarmJungle || hero.Level > 4)) {
+					const reason = hero.Level > 4 ? "уровень > 4" : "уровень позволяет фармить лес"
+					this.Log(`Здоровье восстановлено, ${reason}, возврат на линию пропущен`)
 				}
 				this.isGoingToFountain = false
 			}
@@ -1179,9 +1185,9 @@ new (class JungleFarmScript {
 				const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value
 				const dist = hero.Distance2D(this.lastPosBeforeHeal)
 
-				if (canFarmJungle) {
+				if (canFarmJungle || hero.Level > 4) {
 					this.isReturningAfterHeal = false
-					this.Log(`Возврат отменен: уровень ${hero.Level} позволяет фармить лес`)
+					this.Log(`Возврат отменен: ${hero.Level > 4 ? "уровень > 4" : "уровень позволяет фармить лес"}`)
 				} else if (dist < 300) {
 					this.isReturningAfterHeal = false
 					this.Log("Вернулся на исходную позицию")
@@ -2054,7 +2060,10 @@ new (class JungleFarmScript {
 		}
 
 		let nearest: JungleSpot | null = null
-		let minDist = Infinity
+		let minScore = Infinity
+
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		const basePos = fountain?.Position
 
 		for (const spot of jungleSpots) {
 			const toggle = this.spotToggles.get(spot.name)
@@ -2067,9 +2076,18 @@ new (class JungleFarmScript {
 			const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(spot.pos) > 2500)
 
 			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(spot.name) && isRangeValid) {
-				const dist = hero.Distance2D(spot.pos)
-				if (dist < minDist) {
-					minDist = dist
+				let score = hero.Distance2D(spot.pos)
+				
+				// С 4 уровня приоритизируем кемпы, которые ближе к базе
+				if (hero.Level >= 4 && basePos) {
+					const distToBase = spot.pos.Distance2D(basePos)
+					// Комбинируем дистанцию до героя и дистанцию до базы (с весом)
+					// Чем меньше итоговый score, тем приоритетнее
+					score = (score * 0.4) + (distToBase * 0.6)
+				}
+
+				if (score < minScore) {
+					minScore = score
 					nearest = spot
 				}
 			}
