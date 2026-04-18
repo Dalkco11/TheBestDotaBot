@@ -12,7 +12,6 @@ import {
 	RendererSDK,
 	Rune,
 	Tower,
-	Tree,
 	Unit,
 	Team,
 	GameRules,
@@ -193,8 +192,6 @@ new (class JungleFarmScript {
 	private readonly moveOnlyBetweenCamps = this.jungleNode.AddToggle("MoveTo между кемпами", true, "Не отвлекаться на героев при перебежках")
 	private readonly skipIfAllyFarming = this.jungleNode.AddToggle("Пропускать занятые союзником", true, "Не мешать союзникам фармить")
 	private readonly skipIfEnemyFarming = this.jungleNode.AddToggle("Пропускать занятые врагом", true, "Избегать стычек на спотах")
-	private readonly autoStack = this.jungleNode.AddToggle("Стакать лагеря", true, "Автоматически стакать ближайший лагерь в X:53")
-	private readonly stackRadius = this.jungleNode.AddSlider("Радиус для стака", 2000, 500, 5000, 0, "Максимальное расстояние до лагеря для попытки стака")
 	private readonly spotsNode = this.jungleNode.AddNode("Лесные лагеря", "", "Включение/выключение конкретных точек фарма")
 
 	private readonly safetyNode = this.entry.AddNode("Безопасность", "", "Настройки выживания и фильтры целей")
@@ -223,7 +220,6 @@ new (class JungleFarmScript {
 	private readonly useStick = this.itemsNode.AddToggle("Magic Stick / Wand", true)
 	private readonly useMom = this.itemsNode.AddToggle("Mask of Madness", true)
 	private readonly autoMidas = this.itemsNode.AddToggle("Hand of Midas", true)
-	private readonly useQuelling = this.itemsNode.AddToggle("Quelling Blade", true)
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
 	private readonly autoLotus = this.itemsNode.AddToggle("Использовать лотосы", true)
 	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 0)
@@ -1314,22 +1310,6 @@ new (class JungleFarmScript {
 			}
 		}
 
-		if (this.useQuelling.value) {
-			const quelling = hero.GetItemByName(/item_quelling_blade|item_bfury/)
-			if (quelling?.IsReady && (!this.failedActions.has(quelling.Name) || this.failedActions.get(quelling.Name)! <= GameState.RawGameTime)) {
-				const trees = EntityManager.GetEntitiesByClass(Tree)
-				const isAttacking = hero.IsAttacking
-				const range = isAttacking ? 160 : 380
-				const tree = trees.find(t => t.IsAlive && hero.Distance2D(t) < range)
-
-				if (tree) {
-					hero.CastTarget(quelling, tree, false, true)
-					this.failedActions.set(quelling.Name, GameState.RawGameTime + 0.5)
-					this.lastOrderTime = GameState.RawGameTime
-					return true
-				}
-			}
-		}
 
 		return false
 	}
@@ -1548,48 +1528,7 @@ new (class JungleFarmScript {
 
 			// Логика стакания лагерей в X:53
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
-			const secs = Math.floor(gameTime % 60)
 
-			if (this.autoStack.value && gameTime > 60) {
-				const nearestStackSpot = this.GetNearestEnabledSpot(hero)
-				if (nearestStackSpot && hero.Distance2D(nearestStackSpot.pos) < this.stackRadius.value) {
-					if (secs >= 48 && secs <= 56) {
-						this.targetPos = nearestStackSpot.pos
-						const dist = hero.Distance2D(nearestStackSpot.pos)
-
-						if (secs >= 48 && secs <= 52) {
-							if (dist > 300) {
-								this.setStatus(`Подготовка к стаку: ${nearestStackSpot.name}`)
-								hero.MoveTo(this.GetRandomizedPosition(nearestStackSpot.pos, 100), false, true)
-								this.lastOrderTime = rawTime
-								return true
-							} else {
-								this.setStatus(`Ожидание X:53 для стака: ${nearestStackSpot.name}`)
-								return true
-							}
-						} else if (secs === 53) {
-							const neutrals = this.cachedCreeps.filter(c =>
-								c.IsEnemy(hero) && c.IsNeutral && c.IsAlive && c.IsVisible &&
-								c.Distance2D(nearestStackSpot.pos) < 700
-							)
-							if (neutrals.length > 0) {
-								const target = neutrals[0]
-								this.setStatus(`Удар для стака: ${nearestStackSpot.name}`)
-								hero.AttackTarget(target, false, true)
-								this.lastOrderTime = rawTime
-								return true
-							}
-						} else if (secs >= 54 && secs <= 56) {
-							this.setStatus(`Отвод крипов для стака: ${nearestStackSpot.name}`)
-							const dirAway = hero.Position.Subtract(nearestStackSpot.pos).Normalize()
-							const pullPos = hero.Position.Add(dirAway.MultiplyScalar(1000))
-							hero.MoveTo(this.GetRandomizedPosition(pullPos, 200), false, true)
-							this.lastOrderTime = rawTime
-							return true
-						}
-					}
-				}
-			}
 
 			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
 			if (this.collectLotuses.value && gameTime > 180) {
