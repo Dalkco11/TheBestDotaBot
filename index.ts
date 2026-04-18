@@ -1317,22 +1317,16 @@ new (class JungleFarmScript {
 		if (this.useQuelling.value) {
 			const quelling = hero.GetItemByName(/item_quelling_blade|item_bfury/)
 			if (quelling?.IsReady && (!this.failedActions.has(quelling.Name) || this.failedActions.get(quelling.Name)! <= GameState.RawGameTime)) {
-				if (hero.IsAttacking) {
-					const target = hero.Target
-					if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
-						hero.CastTarget(quelling, target, false, true)
-						this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
-						this.lastOrderTime = GameState.RawGameTime
-						return true
-					}
-				} else {
-					const tree = EntityManager.GetEntitiesByClass(Tree).find(t => t.IsAlive && hero.Distance2D(t) < 350)
-					if (tree) {
-						hero.CastTarget(quelling, tree, false, true)
-						this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
-						this.lastOrderTime = GameState.RawGameTime
-						return true
-					}
+				const trees = EntityManager.GetEntitiesByClass(Tree)
+				const isAttacking = hero.IsAttacking
+				const range = isAttacking ? 160 : 380
+				const tree = trees.find(t => t.IsAlive && hero.Distance2D(t) < range)
+
+				if (tree) {
+					hero.CastTarget(quelling, tree, false, true)
+					this.failedActions.set(quelling.Name, GameState.RawGameTime + 0.5)
+					this.lastOrderTime = GameState.RawGameTime
+					return true
 				}
 			}
 		}
