@@ -12,6 +12,7 @@ import {
 	RendererSDK,
 	Rune,
 	Tower,
+	Tree,
 	Unit,
 	Team,
 	GameRules,
@@ -1313,15 +1314,25 @@ new (class JungleFarmScript {
 			}
 		}
 
-		if (this.useQuelling.value && hero.IsAttacking) {
+		if (this.useQuelling.value) {
 			const quelling = hero.GetItemByName(/item_quelling_blade|item_bfury/)
-			if (quelling?.IsReady) {
-				const target = hero.Target
-				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600 && (!this.failedActions.has(quelling.Name) || this.failedActions.get(quelling.Name)! <= GameState.RawGameTime)) {
-					hero.CastTarget(quelling, target, false, true)
-					this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
-					this.lastOrderTime = GameState.RawGameTime
-					return true
+			if (quelling?.IsReady && (!this.failedActions.has(quelling.Name) || this.failedActions.get(quelling.Name)! <= GameState.RawGameTime)) {
+				if (hero.IsAttacking) {
+					const target = hero.Target
+					if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
+						hero.CastTarget(quelling, target, false, true)
+						this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
+						this.lastOrderTime = GameState.RawGameTime
+						return true
+					}
+				} else {
+					const tree = EntityManager.GetEntitiesByClass(Tree).find(t => t.IsAlive && hero.Distance2D(t) < 350)
+					if (tree) {
+						hero.CastTarget(quelling, tree, false, true)
+						this.failedActions.set(quelling.Name, GameState.RawGameTime + 1.0)
+						this.lastOrderTime = GameState.RawGameTime
+						return true
+					}
 				}
 			}
 		}
@@ -2062,8 +2073,6 @@ new (class JungleFarmScript {
 		let nearest: JungleSpot | null = null
 		let minScore = Infinity
 
-		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-		const basePos = fountain?.Position
 
 		for (const spot of jungleSpots) {
 			const toggle = this.spotToggles.get(spot.name)
@@ -2076,15 +2085,8 @@ new (class JungleFarmScript {
 			const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(spot.pos) > 2500)
 
 			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(spot.name) && isRangeValid) {
+				// Используем простую дистанцию до героя для всех уровней
 				let score = hero.Distance2D(spot.pos)
-				
-				// С 4 уровня приоритизируем кемпы, которые ближе к базе
-				if (hero.Level >= 4 && basePos) {
-					const distToBase = spot.pos.Distance2D(basePos)
-					// Комбинируем дистанцию до героя и дистанцию до базы (с весом)
-					// Чем меньше итоговый score, тем приоритетнее
-					score = (score * 0.4) + (distToBase * 0.6)
-				}
 
 				if (score < minScore) {
 					minScore = score
