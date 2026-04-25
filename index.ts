@@ -221,6 +221,7 @@ new (class JungleFarmScript {
 	private readonly useStick = this.itemsNode.AddToggle("Magic Stick / Wand", true)
 	private readonly useMom = this.itemsNode.AddToggle("Mask of Madness", true)
 	private readonly autoMidas = this.itemsNode.AddToggle("Hand of Midas", true)
+	private readonly autoSoulRing = this.itemsNode.AddToggle("Soul Ring", true, "Использовать Soul Ring перед способностями (при ХП > 65%)")
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
 	private readonly autoLotus = this.itemsNode.AddToggle("Использовать лотосы", true)
 	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 0)
@@ -1408,6 +1409,7 @@ new (class JungleFarmScript {
 		if (this.useMovementAbilities.value && this.targetPos && hero.Distance2D(this.targetPos) > 800) {
 			const blink = spells.find(s => s.Name.includes("blink") || s.Name.includes("time_walk") || s.Name.includes("leap"))
 			if (blink && (!this.failedActions.has(blink.Name) || this.failedActions.get(blink.Name)! <= GameState.RawGameTime)) {
+				this.UseSoulRing(hero)
 				hero.CastPosition(blink, this.targetPos, false, true)
 				this.failedActions.set(blink.Name, GameState.RawGameTime + 1.0)
 				this.lastOrderTime = GameState.RawGameTime
@@ -1426,6 +1428,7 @@ new (class JungleFarmScript {
 
 			if (isToggle) {
 				if (!spell.IsToggled && isAttackingCreep) {
+					this.UseSoulRing(hero)
 					spell.UseAbility(undefined, false, true)
 					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
@@ -1436,6 +1439,7 @@ new (class JungleFarmScript {
 
 			if (isNoTarget) {
 				if (this.useDamageAbilities.value && isAttackingCreep) {
+					this.UseSoulRing(hero)
 					spell.UseAbility()
 					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
@@ -1447,6 +1451,7 @@ new (class JungleFarmScript {
 			if (isUnitTarget) {
 				const bestTarget = this.GetBestTargetForAbility(hero, spell)
 				if (bestTarget) {
+					this.UseSoulRing(hero)
 					spell.UseAbility(bestTarget)
 					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
@@ -1456,6 +1461,7 @@ new (class JungleFarmScript {
 
 			if (isPoint && isAttackingCreep) {
 				if (this.useDamageAbilities.value) {
+					this.UseSoulRing(hero)
 					spell.UseAbility(target.Position)
 					this.failedActions.set(spell.Name, GameState.RawGameTime + 1.0)
 					this.lastOrderTime = GameState.RawGameTime
@@ -1466,6 +1472,17 @@ new (class JungleFarmScript {
 
 		return false
 	}
+
+	private UseSoulRing(hero: Unit): void {
+		if (!this.autoSoulRing.value) return
+		if (hero.HPPercent < 65) return
+
+		const soulRing = hero.GetItemByName("item_soul_ring")
+		if (soulRing?.IsReady) {
+			hero.CastNoTarget(soulRing, false, true)
+		}
+	}
+
 
 	private GetBestTargetForAbility(hero: Unit, ability: Ability): Unit | undefined {
 		const teamMask = ability.TargetTeamMask
