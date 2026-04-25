@@ -301,7 +301,9 @@ new (class JungleFarmScript {
 	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
 	private lastPanoramaTime = 0
+	private damageHistory: { time: number, amount: number }[] = []
 	private lastMinute = -1
+	private allyAtSpotSince: Map<string, number> = new Map()
 	private lastLaneCreepVisibleTime = 0
 	private lastOrderTime = 0
 	private nextOrderDelay = 0.3
@@ -507,7 +509,7 @@ new (class JungleFarmScript {
 		for (const spot of jungleSpots) {
 			const typeNode = campNodes.get(spot.type)!
 			const node = typeNode.AddNode(spot.name)
-			
+
 			// По дефолту включены все
 			this.spotToggles.set(spot.name, node.AddToggle("Включено", true))
 
@@ -701,6 +703,9 @@ new (class JungleFarmScript {
 			const hero = LocalPlayer?.Hero
 
 			if (hero && victim === hero && attacker instanceof Unit && attacker.IsEnemy(hero)) {
+				const damage = obj.damage ?? 0
+				this.damageHistory.push({ time: GameState.RawGameTime, amount: damage })
+
 				if (attacker instanceof Creep && this.IsInTowerRange(attacker.Position, hero)) {
 					this.lastDamageTime = GameState.RawGameTime
 				}
@@ -848,14 +853,14 @@ new (class JungleFarmScript {
 				const now = GameState.RawGameTime
 				this.actionTimestamps = this.actionTimestamps.filter(t => now - t <= 60)
 				const apm = this.actionTimestamps.length
-				
+
 				const apmPosX = screenSize.x - 180
 				const apmPosY = 200
-				
+
 				// Premium APM Display
 				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), new Color(0, 0, 0, 180), 10)
 				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), 1, new Color(0, 255, 255, 100), 10)
-				
+
 				// Glow effect
 				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 22, 900)
 				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX, apmPosY), new Color(0, 255, 255), "Roboto", 22, 900)
@@ -1144,6 +1149,7 @@ new (class JungleFarmScript {
 			if (this.lastMinute === -1) this.lastMinute = currentMinute
 			if (currentMinute !== this.lastMinute) {
 				this.emptySpots.clear()
+				this.allyAtSpotSince.clear()
 				this.lastMinute = currentMinute
 				this.Log(`Минута прошла (${currentMinute}:00), сбрасываю пустые лагеря`)
 			}
@@ -1243,6 +1249,30 @@ new (class JungleFarmScript {
 				if (!target || !target.IsAlive || (this.IsInTowerRange(target.Position, hero) && !isSafeToHit)) {
 					this.Flee(hero, "Отход (Урон под башней)")
 					return
+				}
+			}
+
+			// Логика предотвращения урона от крипов на стадии лайнинга
+			if (hero.Level < this.laneOnlyUntilLevel.value) {
+				// Очистка старой истории урона
+				this.damageHistory = this.damageHistory.filter((d: { time: number, amount: number }) => rawTime - d.time <= 5.0)
+				const totalRecentDamage = this.damageHistory.reduce((sum: number, d: { time: number, amount: number }) => sum + d.amount, 0)
+				const damageThreshold = hero.MaxHP * 0.1
+
+				if (totalRecentDamage > damageThreshold) {
+					const targetingMe = this.cachedCreeps.find(c =>
+						c.IsEnemy(hero) && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 600 && c.TargetIndex_ === hero.Index
+					)
+					// Если мы под башней или рядом (+200), не кайтим (стоим и терпим/фармим)
+					const inAllyTowerRange = this.cachedTowers.some(t => !t.IsEnemy(hero) && t.IsAlive && hero.Distance2D(t) < 850 + 200)
+
+					if (targetingMe && !inAllyTowerRange) {
+						this.Flee(hero, "Кайтинг крипов (Laning)")
+						this.lastOrderTime = rawTime
+						// После отхода сбрасываем историю чтобы не кайтить по кругу
+						this.damageHistory = []
+						return
+					}
 				}
 			}
 
@@ -1576,8 +1606,8 @@ new (class JungleFarmScript {
 			: basePos
 
 		const dir = fleeTarget.Subtract(hero.Position).Normalize()
-		// Отходим на 600 единиц (достаточно чтобы выйти из-под агра, но не убежать в лес)
-		const movePos = hero.Position.Add(dir.MultiplyScalar(600))
+		// Отходим на 150 единиц (по просьбе пользователя, минимальное движение)
+		const movePos = hero.Position.Add(dir.MultiplyScalar(150))
 
 		// Используем GetSafeMovePos только если мы НЕ под башней, чтобы не было кругов
 		// Если мы УЖЕ под башней, просто бежим по прямой от неё в безопасную сторону
@@ -1948,7 +1978,7 @@ new (class JungleFarmScript {
 					this.stuckCheckTime = rawTime
 				}
 
-				if (dist > 300) {
+				if (dist > 150) {
 					this.setStatus(`Путь в лес: ${nearestSpot.name}`)
 					this.lastSpotArrivalTime = 0 // Сбрасываем время прибытия, пока мы в пути
 					const movePos = this.GetSafeMovePos(hero.Position, nearestSpot.pos, hero)
@@ -2072,12 +2102,12 @@ new (class JungleFarmScript {
 				const minLevel = this.spotLevelSliders.get(current.name)?.value ?? 1
 				const isTeamValid = !this.ownJungleOnly.value || current.team === hero.Team
 				const isLevelValid = hero.Level >= minLevel
-				const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(current.pos, hero)
-				const isPathSafe = !this.avoidTowers.value || !this.IsPathBlockedByTower(hero.Position, current.pos, hero)
+				// Пропускаем спот только если он СЛИШКОМ близко к башне (внутри 400 ед, где точно убьют)
+				const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(current.pos, hero, -450)
 				const isBeingFarmed = isFarmed(current)
 				const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(current.pos) > 2500)
 
-				if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(current.name) && isRangeValid) {
+				if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && !isBeingFarmed && !this.emptySpots.has(current.name) && isRangeValid) {
 					return current
 				}
 			}
@@ -2092,12 +2122,11 @@ new (class JungleFarmScript {
 			const minLevel = this.spotLevelSliders.get(spot.name)?.value ?? 1
 			const isTeamValid = !this.ownJungleOnly.value || spot.team === hero.Team
 			const isLevelValid = hero.Level >= minLevel
-			const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(spot.pos, hero)
-			const isPathSafe = !this.avoidTowers.value || !this.IsPathBlockedByTower(hero.Position, spot.pos, hero)
+			const isNotInTowerRange = !this.avoidTowers.value || !this.IsInTowerRange(spot.pos, hero, -450)
 			const isBeingFarmed = isFarmed(spot)
 			const isRangeValid = !(this.lanePriorityUntil4.value && hero.Level < 4 && hero.Distance2D(spot.pos) > 2500)
 
-			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && isPathSafe && !isBeingFarmed && !this.emptySpots.has(spot.name) && isRangeValid) {
+			if (toggle?.value && isTeamValid && isLevelValid && isNotInTowerRange && !isBeingFarmed && !this.emptySpots.has(spot.name) && isRangeValid) {
 				// Используем простую дистанцию до героя для всех уровней
 				let score = hero.Distance2D(spot.pos)
 
@@ -2152,28 +2181,40 @@ new (class JungleFarmScript {
 	}
 
 	private TrackGlobalJungleStatus(hero: Unit): void {
+		const rawTime = GameState.RawGameTime
 		const allies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && !h.IsIllusion)
 
 		for (const spot of jungleSpots) {
 			if (this.emptySpots.has(spot.name)) continue
 
-			const nearestAlly = allies.find(a => a.Distance2D(spot.pos) < 600)
+			const nearestAlly = allies.find(a => a.Distance2D(spot.pos) < 500)
 			if (nearestAlly) {
-				// Если союзник на споте, проверяем наличие крипов
-				const neutrals = this.cachedCreeps.filter(c =>
-					c.IsAlive &&
-					c.IsNeutral &&
-					c.IsVisible &&
-					!c.IsPhantom &&
-					!c.IsInvulnerable &&
-					c.Name.includes("neutral") &&
-					c.Distance2D(spot.pos) < 900
-				)
-
-				if (neutrals.length === 0) {
-					this.emptySpots.add(spot.name)
-					this.Log(`Спот ${spot.name} отмечен как пустой (союзник: ${nearestAlly.Name.replace("npc_dota_hero_", "")})`)
+				if (!this.allyAtSpotSince.has(spot.name)) {
+					this.allyAtSpotSince.set(spot.name, rawTime)
 				}
+
+				const timeAtSpot = rawTime - this.allyAtSpotSince.get(spot.name)!
+				const isFarming = nearestAlly.IsAttacking || timeAtSpot > 3.0
+
+				// Если союзник "занял" спот (стоит долго или атакует), проверяем наличие крипов
+				if (isFarming) {
+					const neutrals = this.cachedCreeps.filter(c =>
+						c.IsAlive &&
+						c.IsNeutral &&
+						c.IsVisible &&
+						!c.IsPhantom &&
+						!c.IsInvulnerable &&
+						c.Name.includes("neutral") &&
+						c.Distance2D(spot.pos) < 900
+					)
+
+					if (neutrals.length === 0) {
+						this.emptySpots.add(spot.name)
+						this.Log(`Спот ${spot.name} зафармлен союзником (${nearestAlly.Name.replace("npc_dota_hero_", "")})`)
+					}
+				}
+			} else {
+				this.allyAtSpotSince.delete(spot.name)
 			}
 		}
 	}
@@ -2249,18 +2290,6 @@ new (class JungleFarmScript {
 
 		// Сортируем по дистанции от фонтана, берем самую дальнюю
 		return laneTowers.sort((a, b) => fountain.Distance2D(b.Position) - fountain.Distance2D(a.Position))[0]
-	}
-
-	private IsPathBlockedByTower(start: Vector3, end: Vector3, hero: Unit): boolean {
-		if (!this.avoidTowers.value) return false
-		const dir = end.Subtract(start).Normalize()
-		const dist = start.Distance2D(end)
-		// Проверяем точки на пути каждые 150 единиц
-		for (let d = 150; d < dist - 150; d += 150) {
-			const checkPos = start.Add(dir.MultiplyScalar(d))
-			if (this.IsInTowerRange(checkPos, hero, 50)) return true
-		}
-		return false
 	}
 
 	private HandleAutoWarding(hero: Unit): void {
