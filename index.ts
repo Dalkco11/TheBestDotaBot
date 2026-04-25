@@ -285,6 +285,9 @@ new (class JungleFarmScript {
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
 	private readonly showAPM = this.debugNode.AddToggle("АПМ на экран", true, "Отображать текущие действия в минуту (бот + игрок)")
+	private readonly maintainAPM = this.debugNode.AddToggle("Поддерживать АПМ", true, "Автоматически подгонять частоту кликов под заданный диапазон")
+	private readonly minAPMStr = this.debugNode.AddSlider("Мин. АПМ", 120, 10, 300, 0)
+	private readonly maxAPMStr = this.debugNode.AddSlider("Макс. АПМ", 150, 10, 310, 0)
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
 	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
@@ -1120,6 +1123,7 @@ new (class JungleFarmScript {
 				: []
 
 			const rawTime = GameState.RawGameTime
+			this.actionTimestamps = this.actionTimestamps.filter(t => rawTime - t <= 60)
 
 			// Вызов HandlePanorama раз в 3 секунды
 			if (rawTime > this.lastPanoramaTime + 3.0) {
@@ -1155,7 +1159,19 @@ new (class JungleFarmScript {
 
 			if (rawTime < this.lastOrderTime + this.nextOrderDelay) return
 
-			this.nextOrderDelay = 0.1 + Math.random() * 0.7 // Рандом от 0.1 до 0.8 для следующего клика
+			// Динамический расчет задержки для поддержания АПМ
+			if (this.maintainAPM.value) {
+				const currentAPM = this.actionTimestamps.length
+				if (currentAPM < this.minAPMStr.value) {
+					this.nextOrderDelay = 0.05 + Math.random() * 0.1 // Снижаем задержку (повышаем АПМ)
+				} else if (currentAPM > this.maxAPMStr.value) {
+					this.nextOrderDelay = 0.8 + Math.random() * 0.5 // Повышаем задержку (снижаем АПМ)
+				} else {
+					this.nextOrderDelay = 0.3 + Math.random() * 0.2 // Норма (целимся в 120-150)
+				}
+			} else {
+				this.nextOrderDelay = 0.1 + Math.random() * 0.7 // Рандом от 0.1 до 0.8 для следующего клика
+			}
 
 			const nearbyCreep = this.cachedCreeps.find(c =>
 				!c.IsNeutral && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 2000 && !this.IsInTowerRange(c.Position, hero)
@@ -1238,6 +1254,25 @@ new (class JungleFarmScript {
 					this.setStatus("Остановка (Цель под башней)")
 					this.lastOrderTime = rawTime
 					return
+				}
+			}
+
+			// Если основная логика не отправила приказ, но АПМ слишком низкий - шлем "филлер"
+			if (!mainOrderSent && this.maintainAPM.value && this.actionTimestamps.length < this.minAPMStr.value) {
+				const target = hero.Target ?? this.targetPos
+				if (target) {
+					if (target instanceof Vector3) {
+						hero.MoveTo(this.GetRandomizedPosition(target, 50), false, true)
+					} else {
+						hero.AttackTarget(target, false, true)
+					}
+					this.lastOrderTime = rawTime
+					mainOrderSent = true
+				} else if (hero.IsMoving) {
+					// Если просто идем - освежаем клик по вектору движения
+					hero.MoveTo(this.GetRandomizedPosition(hero.Position.Add(hero.Forward.MultiplyScalar(300)), 50), false, true)
+					this.lastOrderTime = rawTime
+					mainOrderSent = true
 				}
 			}
 		} catch (e) {
