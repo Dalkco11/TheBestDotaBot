@@ -19,7 +19,8 @@ import {
 	Vector3,
 	DOTA_ABILITY_BEHAVIOR,
 	DOTA_UNIT_TARGET_TEAM,
-	DOTA_UNIT_TARGET_TYPE
+	DOTA_UNIT_TARGET_TYPE,
+	ExecuteOrder
 } from "github.com/octarine-public/wrapper/index"
 
 
@@ -283,6 +284,7 @@ new (class JungleFarmScript {
 	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
+	private readonly showAPM = this.debugNode.AddToggle("АПМ на экран", true, "Отображать текущие действия в минуту (бот + игрок)")
 
 	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
 	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
@@ -334,6 +336,7 @@ new (class JungleFarmScript {
 	private readonly failedActions: Map<string, number> = new Map()
 	private isEscapingTower = false
 	private lastTpTime = 0
+	private actionTimestamps: number[] = []
 
 	private unitStates: Map<number, UnitState> = new Map()
 
@@ -570,6 +573,11 @@ new (class JungleFarmScript {
 				this.ResetState()
 			}
 		})
+		EventsSDK.on("PrepareUnitOrders", (order: ExecuteOrder) => {
+			if (typeof GameState !== 'undefined') {
+				this.actionTimestamps.push(GameState.RawGameTime)
+			}
+		})
 	}
 
 	private ResetState(): void {
@@ -601,6 +609,7 @@ new (class JungleFarmScript {
 		this.lastHeroAttackerTime = 0
 		this.lastHeroChatTime = 0
 		this.lastHeroAttackerName = ""
+		this.actionTimestamps = []
 
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
@@ -831,6 +840,23 @@ new (class JungleFarmScript {
 				return
 			}
 
+			if (this.showAPM.value) {
+				const now = GameState.RawGameTime
+				this.actionTimestamps = this.actionTimestamps.filter(t => now - t <= 60)
+				const apm = this.actionTimestamps.length
+				
+				const apmPosX = screenSize.x - 180
+				const apmPosY = 200
+				
+				// Premium APM Display
+				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), new Color(0, 0, 0, 180), 10)
+				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), 1, new Color(0, 255, 255, 100), 10)
+				
+				// Glow effect
+				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 22, 900)
+				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX, apmPosY), new Color(0, 255, 255), "Roboto", 22, 900)
+			}
+
 			if (hero === undefined || !hero.IsAlive) return
 
 			if (this.heroDamageWarning.value && GameState.RawGameTime - this.lastHeroAttackerTime < 2) {
@@ -886,6 +912,7 @@ new (class JungleFarmScript {
 				this.lastCameraLock = false
 				this.lastCameraLockTime = 0
 			}
+
 
 			if (!this.state.value) return
 
@@ -1042,8 +1069,9 @@ new (class JungleFarmScript {
 				const mins = Math.floor(absTime / 60)
 				const secs = absTime % 60
 				const timeStr = `${time < 0 ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
-				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, 350), Color.White.SetA(200), "Roboto", 20)
+				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, yOffset + 130), Color.White.SetA(200), "Roboto", 20)
 			}
+
 
 			// Отрисовка точек для вардинга
 			this.DrawWardSpots(hero)
