@@ -1,5 +1,6 @@
 import {
 	Ability,
+	AbilityData,
 	Color,
 	Creep,
 	EntityManager,
@@ -83,56 +84,52 @@ interface UnitState {
 interface ItemBuildStep {
 	name: string
 	displayName: string
-	itemId: number
-	components: { name: string; itemId: number }[]
+	altNames?: string[]
+	components: { name: string }[]
 }
 
 const autoBuyBuild: ItemBuildStep[] = [
 	{
 		name: "item_quelling_blade",
 		displayName: "Топор",
-		itemId: 11,
 		components: [
-			{ name: "item_quelling_blade", itemId: 11 }
+			{ name: "item_quelling_blade" }
 		]
 	},
 	{
 		name: "item_bracer",
 		displayName: "Брейсер",
-		itemId: 73,
 		components: [
-			{ name: "item_circlet", itemId: 16 },
-			{ name: "item_gauntlets", itemId: 13 },
-			{ name: "item_recipe_bracer", itemId: 72 }
+			{ name: "item_circlet" },
+			{ name: "item_gauntlets" },
+			{ name: "item_recipe_bracer" }
 		]
 	},
 	{
 		name: "item_phase_boots",
 		displayName: "Фейзы",
-		itemId: 50,
 		components: [
-			{ name: "item_boots", itemId: 29 },
-			{ name: "item_blades_of_attack", itemId: 12 },
-			{ name: "item_chainmail", itemId: 17 }
+			{ name: "item_boots" },
+			{ name: "item_blades_of_attack" },
+			{ name: "item_chainmail" }
 		]
 	},
 	{
 		name: "item_mask_of_madness",
 		displayName: "МОМ",
-		itemId: 172,
 		components: [
-			{ name: "item_lifesteal", itemId: 26 },
-			{ name: "item_quarterstaff", itemId: 10 }
+			{ name: "item_lifesteal" },
+			{ name: "item_broadsword" }
 		]
 	},
 	{
 		name: "item_yasha",
 		displayName: "Яша",
-		itemId: 170,
+		altNames: ["item_yasha", "item_sange_and_yasha", "item_yasha_and_kaya"],
 		components: [
-			{ name: "item_blade_of_alacrity", itemId: 18 },
-			{ name: "item_boots_of_elves", itemId: 15 },
-			{ name: "item_recipe_yasha", itemId: 169 }
+			{ name: "item_blade_of_alacrity" },
+			{ name: "item_boots_of_elves" },
+			{ name: "item_recipe_yasha" }
 		]
 	}
 ]
@@ -1506,28 +1503,43 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private HasItemInInventoryOrStash(hero: Unit, itemName: string): boolean {
+	private HasItemInInventoryOrStash(hero: Unit, itemNames: string | string[]): boolean {
+		const names = Array.isArray(itemNames) ? itemNames : [itemNames]
 		for (let i = 0; i <= 16; i++) {
 			const item = hero.Inventory.GetItem(i)
-			if (item && item.Name === itemName) return true
+			if (item && names.includes(item.Name)) return true
 		}
 		return false
+	}
+
+	private GetItemId(itemName: string): number {
+		const data = AbilityData.GetAbilityByName(itemName)
+		if (data && typeof data.ID === "number" && data.ID > 0) {
+			return data.ID
+		}
+		return -1
 	}
 
 	private HandleAutoBuyItems(hero: Unit, state: UnitState): void {
 		if (!this.autoBuyItems.value) return
 
 		for (const step of autoBuyBuild) {
-			// Проверяем, есть ли у нас уже готовый предмет
-			if (this.HasItemInInventoryOrStash(hero, step.name)) {
+			// Проверяем, есть ли у нас уже готовый предмет (или его апгрейд)
+			const checkNames = step.altNames ?? [step.name]
+			if (this.HasItemInInventoryOrStash(hero, checkNames)) {
 				continue
 			}
 
 			// Если готового предмета нет, ищем первый недостающий компонент
 			for (const comp of step.components) {
 				if (!this.HasItemInInventoryOrStash(hero, comp.name)) {
-					this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName})`, hero)
-					hero.PurchaseItem(comp.itemId)
+					const itemId = this.GetItemId(comp.name)
+					if (itemId > 0) {
+						this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName}) [ID:${itemId}]`, hero)
+						hero.PurchaseItem(itemId)
+					} else {
+						this.Log(`Ошибка авто-покупки: не найден ID для ${comp.name}`, hero)
+					}
 					return // Покупаем только 1 предмет за итерацию
 				}
 			}
