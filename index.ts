@@ -348,10 +348,7 @@ new (class JungleFarmScript {
 	private readonly shopNode = this.autoNode.AddNode("Авто-покупка", "", "Настройки автоматической покупки предметов")
 	private readonly autoBuyItems = this.shopNode.AddToggle("Авто-покупка", true, "Автоматически покупать Топор, Брейсер, Фейзы, МОМ, Яша")
 
-	private readonly neutralNode = this.autoNode.AddNode("Нейтралки", "", "Работа с нейтральными предметами")
-	private readonly autoNeutralPick = this.neutralNode.AddToggle("Подбор нейтралок", true, "Подбирать выпавшие жетоны и предметы")
-	private readonly autoUseToken = this.neutralNode.AddToggle("Использовать жетон", true, "Использовать жетон, если слот пуст")
-	private readonly sendExtraToStash = this.neutralNode.AddToggle("Лишнее в тайник", true, "Отправлять лишние нейтралки на базу")
+
 
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
 	private readonly spotLevelSliders: Map<string, Menu.Slider> = new Map()
@@ -1176,7 +1173,7 @@ new (class JungleFarmScript {
 			}
 
 			// Нейтральные предметы (раз в 2 сек)
-			if (this.autoNeutralPick.value && rawTime > state.lastNeutralCheckTime + 2.0) {
+			if (rawTime > state.lastNeutralCheckTime + 2.0) {
 				this.HandleNeutralItems(hero, state)
 				state.lastNeutralCheckTime = rawTime
 			}
@@ -1489,33 +1486,122 @@ new (class JungleFarmScript {
 		}
 	}
 
+	private GetBestNeutralItemsForHero(hero: Unit): string[] {
+		// 0: STR, 1: AGI, 2: INT, 3: UNI
+		const primaryAttr = (hero as any).PrimaryAttribute ?? 0
+
+		if (primaryAttr === 1) { // AGI
+			return [
+				// Tier 5
+				"item_apex", "item_stygian_desolator", "item_pirate_hat", "item_giants_ring", "item_mirror_shield",
+				// Tier 4
+				"item_ninja_gear", "item_mind_breaker", "item_penta_edged_sword", "item_ascetic_cap", "item_telescope",
+				// Tier 3
+				"item_paladin_sword", "item_elven_tunic", "item_nemesis_curse", "item_titan_sliver", "item_vindicators_axe",
+				// Tier 2
+				"item_vambrace", "item_orb_of_destruction", "item_ring_of_aquila", "item_pupils_gift", "item_dragon_scale",
+				// Tier 1
+				"item_broom_handle", "item_duelist_gloves", "item_spark_of_courage", "item_seeds_of_serenity", "item_occult_bracelet"
+			]
+		} else if (primaryAttr === 2 || primaryAttr === 3) { // INT / UNI
+			return [
+				// Tier 5
+				"item_book_of_the_dead", "item_mirror_shield", "item_apex", "item_ex_machina", "item_book_of_shadows",
+				// Tier 4
+				"item_timeless_relic", "item_spell_prism", "item_telescope", "item_ninja_gear", "item_stormcrafter",
+				// Tier 3
+				"item_psychic_headband", "item_ceremonial_robe", "item_quickening_charm", "item_elven_tunic", "item_shako_stuff",
+				// Tier 2
+				"item_philosophers_stone", "item_pupils_gift", "item_bullwhip", "item_vambrace", "item_gossamer_cape",
+				// Tier 1
+				"item_arcane_ring", "item_fairy_trinket", "item_occult_bracelet", "item_trusty_shovel", "item_seeds_of_serenity"
+			]
+		} else { // STR (Default)
+			return [
+				// Tier 5
+				"item_apex", "item_giants_ring", "item_stygian_desolator", "item_unwavering_condition", "item_mirror_shield",
+				// Tier 4
+				"item_havoc_hammer", "item_mind_breaker", "item_ascetic_cap", "item_aviana_feather", "item_ninja_gear",
+				// Tier 3
+				"item_ogre_seal_totem", "item_paladin_sword", "item_craggy_coat", "item_titan_sliver", "item_elven_tunic",
+				// Tier 2
+				"item_vambrace", "item_dragon_scale", "item_pupils_gift", "item_orb_of_destruction", "item_ring_of_aquila",
+				// Tier 1
+				"item_occult_bracelet", "item_spark_of_courage", "item_seeds_of_serenity", "item_broom_handle", "item_trusty_shovel"
+			]
+		}
+	}
+
 	private HandleNeutralItems(hero: Unit, state: UnitState): void {
-		// Подбор жетонов и предметов на земле
-		if (this.autoNeutralPick.value) {
-			const itemOnGround = EntityManager.GetEntitiesByClass(PhysicalItem).find(u => 
-				hero.Distance2D(u) < 400 && u.IsVisible
-			)
-			if (itemOnGround) {
-				hero.PickupItem(itemOnGround, false, true)
-				return
+		const rawTime = GameState.RawGameTime
+
+		// 1. Автоматический подбор выпавших жетонов/нейтралок с земли
+		const itemOnGround = EntityManager.GetEntitiesByClass(PhysicalItem).find(u =>
+			u && u.IsVisible && hero.Distance2D(u) < 450 &&
+			(u.Name.includes("item_tier") || u.Name.includes("token") || (u as any).IsNeutral)
+		)
+		if (itemOnGround) {
+			hero.PickupItem(itemOnGround, false, true)
+			return
+		}
+
+		// 2. Поиск нейтральных жетонов (tokens) в инвентаре/тайнике и их активация
+		const token = hero.Inventory.Items.find(i => i && i.Name.includes("item_tier") && i.Name.includes("token"))
+		if (token && token.IsReady && rawTime > state.lastOrderTime + 1.0) {
+			this.Log(`Авто-выбор нейтралки: открываю жетон ${token.Name}`, hero)
+			token.UseAbility()
+			state.lastOrderTime = rawTime
+			return
+		}
+
+		// 3. Экипировка лучшего нейтрального предмета в нейтральный слот (16)
+		const currentNeutral = hero.Inventory.GetItem(16)
+		const bestItems = this.GetBestNeutralItemsForHero(hero)
+
+		// Поиск доступных нейтральных предметов у героя
+		const availableNeutrals = hero.Inventory.Items.filter(i =>
+			i && i.IsNeutral &&
+			!i.Name.includes("token") &&
+			(i as any).Slot !== 16
+		)
+
+		if (availableNeutrals.length > 0) {
+			// Сортируем нейтралки по рейтингу приоритета для героя
+			const sorted = availableNeutrals.sort((a, b) => {
+				const indexA = bestItems.indexOf(a.Name)
+				const indexB = bestItems.indexOf(b.Name)
+				const rankA = indexA !== -1 ? indexA : 999
+				const rankB = indexB !== -1 ? indexB : 999
+				return rankA - rankB
+			})
+
+			const bestAvailable = sorted[0]
+			if (bestAvailable) {
+				const currentRank = currentNeutral ? bestItems.indexOf(currentNeutral.Name) : 9999
+				const bestRank = bestItems.indexOf(bestAvailable.Name) !== -1 ? bestItems.indexOf(bestAvailable.Name) : 999
+
+				// Если слота нет или нашлась нейтралка лучше текущей — экипируем
+				if (!currentNeutral || bestRank < currentRank) {
+					this.Log(`Авто-нейтралка: экипирую ${bestAvailable.Name}`, hero)
+					if (typeof (bestAvailable as any).MoveItem === "function") {
+						;(bestAvailable as any).MoveItem(16)
+					} else if (typeof (bestAvailable as any).SwapItems === "function" && currentNeutral) {
+						;(bestAvailable as any).SwapItems(currentNeutral)
+					} else {
+						bestAvailable.UseAbility()
+					}
+					state.lastOrderTime = rawTime
+					return
+				}
 			}
 		}
 
-		// Работа с нейтральным слотом
-		const neutralSlot = hero.Inventory.GetItem(16)
-		if (!neutralSlot && this.autoUseToken.value) {
-			// Ищем жетон в инвентаре
-			const token = hero.Inventory.Items.find(i => i && i.Name.includes("item_tier"))
-			if (token && token.IsReady) {
-				token.UseAbility()
-			}
-		}
-		
-		// Отправка лишних в тайник
-		if (this.sendExtraToStash.value) {
-			const extraNeutral = hero.Inventory.Items.find(i => i && i.IsNeutral && (i as any).Slot > 5 && (i as any).Slot !== 16)
-			if (extraNeutral) {
-				(extraNeutral as any).TransferToStash?.()
+		// 4. Отправка лишних неиспользуемых нейтралок в тайник
+		for (const extra of availableNeutrals) {
+			if (currentNeutral && extra !== currentNeutral) {
+				if (typeof (extra as any).TransferToStash === "function") {
+					;(extra as any).TransferToStash()
+				}
 			}
 		}
 	}
