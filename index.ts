@@ -640,7 +640,25 @@ new (class JungleFarmScript {
 		})
 
 		EventsSDK.on("PostDataUpdate", () => {
-			if (!this.state.value || typeof GameState === 'undefined') return
+			if (typeof GameState === 'undefined') return
+
+			if (!this.hasSentInitialSpawnMove) {
+				const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
+					u.IsHero && u.IsAlive && u.IsControllable
+				)
+				if (controllableHeroes.length > 0) {
+					for (const hero of controllableHeroes) {
+						if (hero.Team === Team.Radiant) {
+							hero.MoveTo(new Vector3(-855, -701, 128), false, true)
+						} else if (hero.Team === Team.Dire) {
+							hero.MoveTo(new Vector3(-180, -31, 128), false, true)
+						}
+					}
+					this.hasSentInitialSpawnMove = true
+				}
+			}
+
+			if (!this.state.value) return
 
 			// Получаем всех контролируемых героев
 			const heroes = EntityManager.GetEntitiesByClass(Unit).filter(u => 
@@ -654,6 +672,8 @@ new (class JungleFarmScript {
 		})
 	}
 	
+	private hasSentInitialSpawnMove = false
+
 	private ResetState(): void {
 		this.emptySpots.clear()
 		this.lastMinute = -1
@@ -663,6 +683,7 @@ new (class JungleFarmScript {
 		this.lastHeroAttackerTime = 0
 		this.lastHeroChatTime = 0
 		this.lastHeroAttackerName = ""
+		this.hasSentInitialSpawnMove = false
 
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
