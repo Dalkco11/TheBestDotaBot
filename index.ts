@@ -80,6 +80,8 @@ interface UnitState {
 	assignedLane?: 1 | 2
 	lastBuyTime: number
 	purchasedItems?: Map<string, number>
+	lastXp?: number
+	lastXpChangeTime?: number
 }
 
 interface ItemBuildStep {
@@ -320,6 +322,8 @@ new (class JungleFarmScript {
 	private readonly minAPMStr = this.debugNode.AddSlider("Мин. АПМ", 120, 10, 300, 0)
 	private readonly maxAPMStr = this.debugNode.AddSlider("Макс. АПМ", 150, 10, 310, 0)
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
+	private readonly autoDisconnect = this.debugNode.AddToggle("Авто-дисконнект в конце", true, "Автоматически выходить в главное меню по завершению игры")
+	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "Использовать свиток ТП на базу при застревании (например на ХГ)")
 
 	private readonly autoEnable = { value: true }
 	private readonly returnAfterHeal = { value: true }
@@ -627,6 +631,10 @@ new (class JungleFarmScript {
 		EventsSDK.on("GameEvent", this.OnGameEvent.bind(this))
 		EventsSDK.on("GameEnded", () => {
 			this.ResetState()
+			if (this.autoDisconnect.value) {
+				this.Log("Игра завершена, выполняю авто-дисконнект")
+				this.SafeExecuteCommand("disconnect")
+			}
 		})
 		EventsSDK.on("PrepareUnitOrders", (order: ExecuteOrder) => {
 			if (typeof GameState !== 'undefined') {
@@ -856,13 +864,25 @@ new (class JungleFarmScript {
 				// Фильтруем старые метки времени прямо здесь для точности отображения
 				mainState.actionTimestamps = mainState.actionTimestamps.filter(t => GameState.RawGameTime - t <= 60)
 				
+				const currentXp = hero.CurrentXP
+				if (mainState.lastXp === undefined || mainState.lastXp !== currentXp) {
+					mainState.lastXp = currentXp
+					mainState.lastXpChangeTime = GameState.RawGameTime
+				}
+				const xpSecAgo = Math.floor(GameState.RawGameTime - (mainState.lastXpChangeTime ?? GameState.RawGameTime))
+
 				const apm = mainState.actionTimestamps.length
 				const apmPosX = screenSize.x - 180
 				const apmPosY = 200
-				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), new Color(0, 0, 0, 180), 10)
-				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(140, 40), 1, new Color(0, 255, 255, 100), 10)
-				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 22, 900)
-				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX, apmPosY), new Color(0, 255, 255), "Roboto", 22, 900)
+				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), new Color(0, 0, 0, 180), 10)
+				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), 1, new Color(0, 255, 255, 100), 10)
+				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 20, 900)
+				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX, apmPosY), new Color(0, 255, 255), "Roboto", 20, 900)
+
+				const xpText = `EXP timer: ${xpSecAgo}s`
+				const xpColor = xpSecAgo > 240 ? Color.Red : xpSecAgo > 180 ? Color.Yellow : Color.White
+				RendererSDK.Text(xpText, new Vector2(apmPosX + 1, apmPosY + 31), new Color(0, 0, 0, 200), "Roboto", 16, 700)
+				RendererSDK.Text(xpText, new Vector2(apmPosX, apmPosY + 30), xpColor, "Roboto", 16, 700)
 			}
 
 			if (hero === undefined) return
@@ -2405,6 +2425,19 @@ new (class JungleFarmScript {
 
 				if (rawTime > state.stuckCheckTime + 4.0) {
 					if (state.lastPosForStuckCheck && hero.Distance2D(state.lastPosForStuckCheck) < 75) {
+						if (this.autoStuckTp.value && rawTime > state.lastTpTime + 15) {
+							const tp = hero.Inventory.GetItem(15) ?? hero.GetItemByName("item_tpscroll")
+							if (tp && tp.IsReady) {
+								const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+								if (fountain) {
+									hero.CastPosition(tp, fountain.Position, false, true)
+									state.lastTpTime = rawTime
+									state.lastOrderTime = rawTime
+									this.Log("Использую ТП на базу (Застревание / ХГ)", hero)
+									return true
+								}
+							}
+						}
 						if (dist < 700) {
 							this.Log(`Спот ${nearestSpot.name} помечен пустым (Застревание, dist: ${Math.floor(dist)})`, hero)
 							this.emptySpots.add(nearestSpot.name)
