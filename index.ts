@@ -23,7 +23,8 @@ import {
 	DOTA_UNIT_TARGET_TYPE,
 	ExecuteOrder,
 	Tree,
-	PhysicalItem
+	PhysicalItem,
+	HttpSDK
 } from "github.com/octarine-public/wrapper/index"
 
 
@@ -716,13 +717,80 @@ new (class JungleFarmScript {
 	private tgGameEndSent = false
 	private tgLowPrioritySent = false
 
+	private async universalFetch(url: string, options: any = {}): Promise<any> {
+		try {
+			if (typeof HttpSDK !== 'undefined') {
+				if (typeof (HttpSDK as any).Fetch === 'function') {
+					return await (HttpSDK as any).Fetch(url, options)
+				}
+				if (typeof (HttpSDK as any).Request === 'function') {
+					return await (HttpSDK as any).Request(url, options)
+				}
+				if (typeof (HttpSDK as any).Get === 'function' && (!options.method || options.method === 'GET')) {
+					return new Promise(resolve => {
+						(HttpSDK as any).Get(url, (res: any) => {
+							try {
+								const parsed = typeof res === 'string' ? JSON.parse(res) : res
+								resolve({ ok: true, json: async () => parsed, text: async () => typeof res === 'string' ? res : JSON.stringify(res) })
+							} catch (e) {
+								resolve(null)
+							}
+						})
+					})
+				}
+				if (typeof (HttpSDK as any).Post === 'function' && options.method === 'POST') {
+					return new Promise(resolve => {
+						(HttpSDK as any).Post(url, options.body || {}, (res: any) => {
+							try {
+								const parsed = typeof res === 'string' ? JSON.parse(res) : res
+								resolve({ ok: true, json: async () => parsed, text: async () => typeof res === 'string' ? res : JSON.stringify(res) })
+							} catch (e) {
+								resolve(null)
+							}
+						})
+					})
+				}
+			}
+
+			const globalFetch = (globalThis as any).fetch || (typeof window !== 'undefined' && (window as any).fetch)
+			if (typeof globalFetch === 'function') {
+				return await globalFetch(url, options)
+			}
+
+			const XHR = (globalThis as any).XMLHttpRequest || (typeof window !== 'undefined' && (window as any).XMLHttpRequest)
+			if (typeof XHR !== 'undefined') {
+				return new Promise((resolve) => {
+					const xhr = new XHR()
+					const method = options.method || 'GET'
+					xhr.open(method, url, true)
+					if (options.headers) {
+						for (const k in options.headers) {
+							xhr.setRequestHeader(k, options.headers[k])
+						}
+					}
+					xhr.onload = () => {
+						const responseText = xhr.responseText
+						resolve({
+							ok: xhr.status >= 200 && xhr.status < 300,
+							text: async () => responseText,
+							json: async () => JSON.parse(responseText)
+						})
+					}
+					xhr.onerror = () => resolve(null)
+					xhr.send(options.body || null)
+				})
+			}
+		} catch (e) {
+			// Ignore silently
+		}
+		return null
+	}
+
 	private async PollTelegramUpdates(): Promise<void> {
 		try {
-			const fetchFn = (globalThis as any).fetch
-			if (typeof fetchFn === 'undefined') return
 			const url = `https://api.telegram.org/bot${this.tgToken}/getUpdates?offset=${this.tgLastUpdateId + 1}&timeout=0`
-			const response = await fetchFn(url)
-			if (!response.ok) return
+			const response = await this.universalFetch(url)
+			if (!response || !response.ok) return
 			const data = (await response.json()) as any
 			if (data && data.ok && Array.isArray(data.result)) {
 				for (const update of data.result) {
@@ -749,14 +817,12 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private SendTelegramMessage(text: string, specificChatId?: number): void {
+	private async SendTelegramMessage(text: string, specificChatId?: number): Promise<void> {
 		try {
-			const fetchFn = (globalThis as any).fetch
-			if (typeof fetchFn === 'undefined') return
 			const chatIds = specificChatId ? [specificChatId] : Array.from(this.tgChatIds)
 			for (const chatId of chatIds) {
 				const url = `https://api.telegram.org/bot${this.tgToken}/sendMessage`
-				fetchFn(url, {
+				await this.universalFetch(url, {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
@@ -764,7 +830,7 @@ new (class JungleFarmScript {
 						text: text,
 						parse_mode: "HTML"
 					})
-				}).catch(() => {})
+				})
 			}
 		} catch (e) {
 			// Silently catch error
@@ -1040,8 +1106,8 @@ new (class JungleFarmScript {
 				const xpSecAgo = Math.floor(GameState.RawGameTime - (mainState.lastXpChangeTime ?? GameState.RawGameTime))
 
 				const apm = mainState.actionTimestamps.length
-				const apmPosX = screenSize.x - 180
-				const apmPosY = 200
+				const apmPosX = 200
+				const apmPosY = 280
 				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), new Color(0, 0, 0, 180), 10)
 				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), 1, new Color(0, 255, 255, 100), 10)
 				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 20, 900)
