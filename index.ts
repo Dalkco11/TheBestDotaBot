@@ -1463,17 +1463,21 @@ new (class JungleFarmScript {
 
 		// 1. Проверяем инвентарь, тайник и рюкзак героя (слоты 0-16)
 		for (let i = 0; i <= 16; i++) {
-			const item = hero.Inventory.GetItem(i)
+			const item = hero.Inventory?.GetItem(i)
 			if (item && names.includes(item.Name)) return true
 		}
 
-		// 2. Проверяем курьеров нашей команды
-		const couriers = EntityManager.GetEntitiesByClass(Courier).filter(c => !c.IsEnemy(hero) && c.IsAlive)
-		for (const courier of couriers) {
-			for (let i = 0; i <= 8; i++) {
-				const item = courier.Inventory?.GetItem(i)
-				if (item && names.includes(item.Name)) return true
+		// 2. Проверяем курьеров нашей команды (через Unit с проверкой имени "courier")
+		try {
+			const couriers = EntityManager.GetEntitiesByClass(Unit).filter(u => u && u.IsAlive && u.Name.includes("courier") && !u.IsEnemy(hero))
+			for (const courier of couriers) {
+				for (let i = 0; i <= 8; i++) {
+					const item = courier.Inventory?.GetItem(i)
+					if (item && names.includes(item.Name)) return true
+				}
 			}
+		} catch (e) {
+			// Безопасная обработка в случае ошибок API
 		}
 
 		// 3. Проверяем кэш недавних покупок (чтобы не покупать повторно во время доставки)
