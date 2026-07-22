@@ -271,14 +271,11 @@ new (class JungleFarmScript {
 	private readonly skipIfEnemyFarming = this.jungleNode.AddToggle("Пропускать занятые врагом", true, "Избегать стычек на спотах")
 	private readonly spotsNode = this.jungleNode.AddNode("Лесные лагеря", "", "Включение/выключение конкретных точек фарма")
 
-	private readonly safetyNode = this.entry.AddNode("Безопасность", "", "Настройки выживания и фильтры целей")
-	private readonly avoidTowers = this.safetyNode.AddToggle("Обходить башни", true, "Автоматический поиск пути в обход радиуса атак башен")
-	private readonly hpThreshold = this.safetyNode.AddSlider("Порог здоровья %", 22, 0, 100, 0, "При каком HP идти лечиться на базу")
-	private readonly autoTpLowHp = this.safetyNode.AddToggle("Авто-ТП на базу", true, "Использовать свиток телепортации, если HP ниже порога")
-	private readonly ignoreHeroes = this.safetyNode.AddToggle("Игнорировать героев", true, "Не атаковать героев при фарме")
-	private readonly ignoreMid = this.safetyNode.AddToggle("Игнорировать мид", true, "Не ходить на центральную линию")
-	private readonly autoWard = this.safetyNode.AddToggle("Авто-вардинг", true, "Автоматически ставить варды, если они есть в инвентаре")
-	private readonly wardRadius = this.safetyNode.AddSlider("Радиус активации варда", 1200, 500, 3000, 0, "Если бот пробегает в этом радиусе от точки, он поставит вард")
+	private readonly avoidTowers = { value: true }
+	private readonly autoTpLowHp = { value: true }
+	private readonly ignoreHeroes = { value: true }
+	private readonly ignoreMid = { value: true }
+	private readonly autoWard = { value: true }
 
 	private readonly autoNode = this.entry.AddNode("Автоматизация", "", "Авто-предметы и способности")
 	private readonly itemsNode = this.autoNode.AddNode("Авто-предметы")
@@ -310,36 +307,36 @@ new (class JungleFarmScript {
 	private readonly autoLevelingNode = this.autoNode.AddNode("Авто-прокачка", "", "Настройки автоматической прокачки способностей")
 	private readonly autoLeveling = this.autoLevelingNode.AddToggle("Включить авто-прокачку", true)
 
-	private readonly visualNode = this.entry.AddNode("Визуализация", "", "Отрисовка маршрутов и статусов")
-	private readonly drawSpots = this.visualNode.AddToggle("Рисовать споты", true)
-	private readonly drawRoute = this.visualNode.AddToggle("Рисовать маршрут", true)
-	private readonly drawRouteStyle = this.visualNode.AddDropdown("Стиль маршрута", ["Линия", "Стрелки"], 0, "Визуальный стиль отрисовки маршрута")
-	private readonly drawRouteColor = this.visualNode.AddColorPicker("Цвет маршрута", new Color(128, 0, 128).SetA(255), "Цвет отрисовываемого маршрута")
+	private readonly drawSpots = { value: true }
+	private readonly drawRoute = { value: true }
+	private readonly drawRouteStyle = { SelectedID: 0 }
+	private readonly drawRouteColor = { SelectedColor: new Color(128, 0, 128).SetA(255) }
 
-
-
-	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
-	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
-	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
-	private readonly tpAfterHeal = this.debugNode.AddToggle("ТП после хила", true, "Использовать свиток ТП на союзных крипов или башню после лечения")
-	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
-	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", true, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
-	private readonly drawDebugLog = this.debugNode.AddToggle("Показывать лог на экране", true, "Отрисовка последних действий скрипта в углу экрана")
-	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
-	private readonly heroDamageWarning = this.debugNode.AddToggle("Тест урона героев", true, "Показывать уведомление при получении урона от вражеского героя")
-	private readonly chatOnHeroDamage = this.debugNode.AddToggle("Чат при уроне", true, "Писать в чат просьбу не бить при получении урона от героя")
-	private readonly chatOnHeroDeath = this.debugNode.AddToggle("Чат при смерти", true, "Писать в чат сообщение при смерти от вражеского героя")
+	private readonly debugNode = this.entry.AddNode("Отладка", "", "Настройки ползунков и отладки")
+	private readonly hpThreshold = this.debugNode.AddSlider("Порог здоровья %", 22, 0, 100, 0, "При каком HP идти лечиться на базу")
+	private readonly wardRadius = this.debugNode.AddSlider("Радиус активации варда", 1200, 500, 3000, 0, "Если бот пробегает в этом радиусе от точки, он поставит вард")
 	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 0, "На какой минуте игры автоматически включить скрипт")
-	private readonly lanePriorityUntil4 = this.debugNode.AddToggle("Приоритет на линии до 4 лвл", true, "Сначала бить крипов на линии, а потом уже идти на кемпы (до 4 уровня)")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 0, "С какого уровня героя начнет работать отправка сообщений в чат")
-	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
-	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
-	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
-	private readonly showAPM = this.debugNode.AddToggle("АПМ на экран", true, "Отображать текущие действия в минуту (бот + игрок)")
-	private readonly maintainAPM = this.debugNode.AddToggle("Поддерживать АПМ", true, "Автоматически подгонять частоту кликов под заданный диапазон")
 	private readonly minAPMStr = this.debugNode.AddSlider("Мин. АПМ", 120, 10, 300, 0)
 	private readonly maxAPMStr = this.debugNode.AddSlider("Макс. АПМ", 150, 10, 310, 0)
-	private readonly dynamicAPM = this.debugNode.AddToggle("Динамический АПМ", true, "Меняет АПМ в зависимости от активности (стелс)")
+	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
+
+	private readonly autoEnable = { value: true }
+	private readonly returnAfterHeal = { value: true }
+	private readonly tpAfterHeal = { value: true }
+	private readonly autoDisableInMenu = { value: true }
+	private readonly detailedDebug = { value: true }
+	private readonly drawDebugLog = { value: true }
+	private readonly forcedBaseExit = { value: true }
+	private readonly heroDamageWarning = { value: true }
+	private readonly chatOnHeroDamage = { value: true }
+	private readonly chatOnHeroDeath = { value: true }
+	private readonly lanePriorityUntil4 = { value: true }
+	private readonly pickAllRunes = { value: true }
+	private readonly showGameTimer = { value: true }
+	private readonly showAPM = { value: true }
+	private readonly maintainAPM = { value: true }
+	private readonly dynamicAPM = { value: true }
 
 	private readonly courierNode = this.autoNode.AddNode("Курьер", "", "Настройки автоматического вызова курьера")
 	private readonly autoCourier = this.courierNode.AddToggle("Авто-курьер", true, "Приносить предметы из тайника автоматически")
