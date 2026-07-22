@@ -299,13 +299,6 @@ new (class JungleFarmScript {
 	private readonly illusionsNode = this.autoNode.AddNode("Иллюзии")
 	private readonly useIllusions = this.illusionsNode.AddToggle("Фарм иллюзиями", true, "Использовать иллюзии для фарма")
 
-	private readonly lotusNode = this.entry.AddNode("Настройки Лотосов", "", "Автосбор лотосов каждые 3 минуты")
-	private readonly collectLotuses = this.lotusNode.AddToggle("Собирать лотосы", true, "Заходить в радиус лотос-пула каждые 3 минуты")
-	private readonly lotusPickRadius = this.lotusNode.AddSlider("Радиус активации", 1500, 500, 3000, 0, "Если бот пробегает в этом радиусе от пула, он зайдет за лотосом")
-
-	private readonly wisdomNode = this.entry.AddNode("Настройки Опыта", "", "Автосбор бассейнов опыта каждые 7 минут")
-	private readonly collectWisdom = this.wisdomNode.AddToggle("Собирать опыт", true, "Заходить в радиус бассейна опыта каждые 7 минут")
-	private readonly wisdomPickRadius = this.wisdomNode.AddSlider("Радиус активации", 2500, 500, 4000, 0, "Если бот пробегает в этом радиусе от бассейна, он зайдет за опытом")
 	private readonly useTargetedHeroes = this.abilitiesNode.AddToggle("Цели: Вражеские герои", true)
 	private readonly useTargetedAllies = this.abilitiesNode.AddToggle("Цели: Союзники", true)
 	private readonly useTargetedSelf = this.abilitiesNode.AddToggle("Цели: На себя", true)
@@ -322,11 +315,7 @@ new (class JungleFarmScript {
 	private readonly drawRouteStyle = this.visualNode.AddDropdown("Стиль маршрута", ["Линия", "Стрелки"], 0, "Визуальный стиль отрисовки маршрута")
 	private readonly drawRouteColor = this.visualNode.AddColorPicker("Цвет маршрута", new Color(128, 0, 128).SetA(255), "Цвет отрисовываемого маршрута")
 
-	private readonly testNode = this.entry.AddNode("Тест (Экспериментально)", "", "Функции для тестирования APM и скорости")
-	private readonly fastLogic = this.testNode.AddToggle("Быстрая логика", false, "Снижает задержку раздумий до 60мс (вместо 100мс)")
-	private readonly spamClick = this.testNode.AddToggle("Спам кликов", false, "Повторно отправлять команду атаки/движения (APM ~240)")
-	private readonly jitterMove = this.testNode.AddToggle("Джиттер-движение", false, "Микро-клики вокруг точки назначения (симуляция нервного игрока)")
-	private readonly experimentalOrbWalk = this.testNode.AddToggle("Orb-Walking", false, "Экспериментальная отмена анимации после выстрела/удара")
+
 
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
 	private readonly lockCamera = this.debugNode.AddToggle("Центрировать камеру", false, "Принудительно центрировать камеру (dota_camera_lock)")
@@ -346,7 +335,6 @@ new (class JungleFarmScript {
 	private readonly setSmallCampsLvl = this.debugNode.AddButton("Авто: Маленькие кемпы (1 лвл)", "Установить уровень 1 для всех маленьких лагерей")
 	private readonly setMediumCampsLvl = this.debugNode.AddButton("Авто: Средние кемпы (4 лвл)", "Установить уровень 4 для всех средних лагерей")
 	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
-	private readonly testSayButton = this.debugNode.AddButton("Тест консоли (say)", "Отправить 'Hello World' в чат")
 	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
@@ -672,10 +660,6 @@ new (class JungleFarmScript {
 			this.Log("Установлен 5 лвл для всех больших и древних кемпов")
 		})
 
-		this.testSayButton.OnValue(() => {
-			this.SafeExecuteCommand("say hello world")
-		})
-
 		EventsSDK.on("Draw", this.OnDraw.bind(this))
 		EventsSDK.on("GameStarted", () => {
 			if (!this.disableResetBetweenGames.value) {
@@ -995,7 +979,7 @@ new (class JungleFarmScript {
 			}
 
 			// Run logic on Draw frame but throttle it
-			const throttle = this.fastLogic.value ? 0.05 : 0.1
+			const throttle = 0.1
 			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
 				const playerID = LocalPlayer?.PlayerID
 				if (playerID !== undefined) {
@@ -1479,6 +1463,19 @@ new (class JungleFarmScript {
 		return false
 	}
 
+	private GetItemCost(itemName: string): number {
+		const data = AbilityData.GetAbilityByName(itemName)
+		return data?.Cost ?? 0
+	}
+
+	private GetHeroGold(hero: Unit): number {
+		const customData = hero.Player?.PlayerCustomData ?? LocalPlayer?.PlayerCustomData
+		if (customData) {
+			return (customData.ReliableGold ?? 0) + (customData.UnreliableGold ?? 0)
+		}
+		return -1
+	}
+
 	private GetItemId(itemName: string): number {
 		const data = AbilityData.GetAbilityByName(itemName)
 		if (data && typeof data.ID === "number" && data.ID > 0) {
@@ -1500,9 +1497,17 @@ new (class JungleFarmScript {
 			// Если готового предмета нет, ищем первый недостающий компонент
 			for (const comp of step.components) {
 				if (!this.HasItemInInventoryOrStash(hero, comp.name)) {
+					const itemCost = this.GetItemCost(comp.name)
+					const heroGold = this.GetHeroGold(hero)
+
+					// Проверка на золото перед покупкой (не отправляем запрос, если золота не хватает)
+					if (heroGold >= 0 && itemCost > 0 && heroGold < itemCost) {
+						return
+					}
+
 					const itemId = this.GetItemId(comp.name)
 					if (itemId > 0) {
-						this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName}) [ID:${itemId}]`, hero)
+						this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName}) [ID:${itemId}, Золото:${heroGold}/${itemCost}]`, hero)
 						hero.PurchaseItem(itemId)
 					} else {
 						this.Log(`Ошибка авто-покупки: не найден ID для ${comp.name}`, hero)
@@ -2016,7 +2021,7 @@ new (class JungleFarmScript {
 
 
 			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
-			if (this.collectLotuses.value && gameTime > 180) {
+			if (gameTime > 180) {
 				const cycle = Math.floor(gameTime / 180)
 
 				// Если мы в режиме лотоса, продолжаем сбор
@@ -2055,9 +2060,9 @@ new (class JungleFarmScript {
 						}
 					}
 				} else if (state.lastLotusPickCycle < cycle) {
-					// Ищем ближайший лотос для начала сбора
+					// Ищем ближайший лотос для начала сбора (радиус 1500)
 					for (const spot of lotusSpots) {
-						if (hero.Distance2D(spot.pos) < this.lotusPickRadius.value) {
+						if (hero.Distance2D(spot.pos) < 1500) {
 							state.currentLotusSpot = spot
 							state.currentFarmMode = "lotus"
 							state.lastModeSwitchTime = rawTime
@@ -2069,7 +2074,7 @@ new (class JungleFarmScript {
 			}
 
 			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
-			if (this.collectWisdom.value && gameTime > 420) {
+			if (gameTime > 420) {
 				const cycle = Math.floor(gameTime / 420)
 
 				if (state.currentFarmMode === "wisdom" && state.currentWisdomSpot) {
@@ -2106,8 +2111,9 @@ new (class JungleFarmScript {
 						}
 					}
 				} else if (state.lastWisdomPickCycle < cycle) {
+					// Ищем ближайший руну мудрости (радиус 2500)
 					for (const spot of wisdomSpots) {
-						if (hero.Distance2D(spot.pos) < this.wisdomPickRadius.value) {
+						if (hero.Distance2D(spot.pos) < 2500) {
 							state.currentWisdomSpot = spot
 							state.currentFarmMode = "wisdom"
 							state.lastModeSwitchTime = rawTime
@@ -2198,25 +2204,14 @@ new (class JungleFarmScript {
 					state.targetPos = targetCreep.Position
 
 					const isAttackingSame = hero.TargetIndex_ === targetCreep.Index
-					const canOrbWalk = this.experimentalOrbWalk.value && hero.AttackAnimationPoint > 0 && (GameState.RawGameTime > hero.LastAttackTime + hero.AttackAnimationPoint)
 
-					if (!isAttackingSame || this.spamClick.value || canOrbWalk) {
+					if (!isAttackingSame) {
 						let targetPos = targetCreep.Position
-						if (this.jitterMove.value) {
-							const angle = Math.random() * Math.PI * 2
-							targetPos = targetPos.Add(new Vector3(Math.cos(angle) * 50, Math.sin(angle) * 50, 0))
-						}
-
 						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
 						if (movePos.Distance2D(targetCreep.Position) > 100) {
 							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
 						} else {
-							if (canOrbWalk && hero.IsAttacking) {
-								const stepBack = hero.Position.Subtract(targetCreep.Position).Normalize().MultiplyScalar(100)
-								hero.MoveTo(this.GetRandomizedPosition(hero.Position.Add(stepBack)), false, true)
-							} else {
-								hero.AttackTarget(targetCreep, false, true)
-							}
+							hero.AttackTarget(targetCreep, false, true)
 						}
 						state.lastOrderTime = GameState.RawGameTime
 						return true
@@ -2320,7 +2315,7 @@ new (class JungleFarmScript {
 					state.targetPos = neutral.Position
 
 					const isAttackingSame = hero.TargetIndex_ === neutral.Index
-					if ((!isAttackingSame || this.spamClick.value) && neutral.IsAlive && neutral.IsVisible) {
+					if (!isAttackingSame && neutral.IsAlive && neutral.IsVisible) {
 						const movePos = this.GetSafeMovePos(hero.Position, neutral.Position, hero, state)
 						if (movePos.Distance2D(neutral.Position) > 100) {
 							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
