@@ -678,8 +678,6 @@ new (class JungleFarmScript {
 		this.emptySpots.clear()
 		this.lastMinute = -1
 		this.lastLogicTime = 0
-		this.lastCameraLock = false
-		this.lastCameraLockTime = 0
 		this.lastHeroAttackerTime = 0
 		this.lastHeroChatTime = 0
 		this.lastHeroAttackerName = ""
