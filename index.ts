@@ -79,6 +79,7 @@ interface UnitState {
 	lastNeutralCheckTime: number
 	assignedLane?: 1 | 2
 	lastBuyTime: number
+	purchasedItems?: Map<string, number>
 }
 
 interface ItemBuildStep {
@@ -476,7 +477,8 @@ new (class JungleFarmScript {
 				lastCourierTime: 0,
 				lastNeutralCheckTime: 0,
 				assignedLane: undefined,
-				lastBuyTime: 0
+				lastBuyTime: 0,
+				purchasedItems: new Map()
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -1456,12 +1458,35 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private HasItemInInventoryOrStash(hero: Unit, itemNames: string | string[]): boolean {
+	private HasItemInInventoryOrStash(hero: Unit, itemNames: string | string[], state?: UnitState): boolean {
 		const names = Array.isArray(itemNames) ? itemNames : [itemNames]
+
+		// 1. Проверяем инвентарь, тайник и рюкзак героя (слоты 0-16)
 		for (let i = 0; i <= 16; i++) {
 			const item = hero.Inventory.GetItem(i)
 			if (item && names.includes(item.Name)) return true
 		}
+
+		// 2. Проверяем курьеров нашей команды
+		const couriers = EntityManager.GetEntitiesByClass(Courier).filter(c => !c.IsEnemy(hero) && c.IsAlive)
+		for (const courier of couriers) {
+			for (let i = 0; i <= 8; i++) {
+				const item = courier.Inventory?.GetItem(i)
+				if (item && names.includes(item.Name)) return true
+			}
+		}
+
+		// 3. Проверяем кэш недавних покупок (чтобы не покупать повторно во время доставки)
+		if (state && state.purchasedItems) {
+			const rawTime = GameState.RawGameTime
+			for (const name of names) {
+				const buyTime = state.purchasedItems.get(name)
+				if (buyTime && rawTime < buyTime + 6.0) {
+					return true
+				}
+			}
+		}
+
 		return false
 	}
 
@@ -1492,13 +1517,13 @@ new (class JungleFarmScript {
 		for (const step of autoBuyBuild) {
 			// Проверяем, есть ли у нас уже готовый предмет (или его апгрейд)
 			const checkNames = step.altNames ?? [step.name]
-			if (this.HasItemInInventoryOrStash(hero, checkNames)) {
+			if (this.HasItemInInventoryOrStash(hero, checkNames, state)) {
 				continue
 			}
 
 			// Если готового предмета нет, ищем первый недостающий компонент
 			for (const comp of step.components) {
-				if (!this.HasItemInInventoryOrStash(hero, comp.name)) {
+				if (!this.HasItemInInventoryOrStash(hero, comp.name, state)) {
 					const itemCost = this.GetItemCost(comp.name)
 					const heroGold = this.GetHeroGold(hero)
 
@@ -1511,6 +1536,8 @@ new (class JungleFarmScript {
 					if (itemId > 0) {
 						this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName}) [ID:${itemId}, Золото:${heroGold}/${itemCost}]`, hero)
 						hero.PurchaseItem(itemId)
+						if (!state.purchasedItems) state.purchasedItems = new Map()
+						state.purchasedItems.set(comp.name, GameState.RawGameTime)
 					} else {
 						this.Log(`Ошибка авто-покупки: не найден ID для ${comp.name}`, hero)
 					}
