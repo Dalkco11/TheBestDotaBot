@@ -691,14 +691,27 @@ new (class JungleFarmScript {
 				}
 			}
 
-			if (!this.state.value) return
-
-			// Получаем всех контролируемых героев
-			const heroes = EntityManager.GetEntitiesByClass(Unit).filter(u => 
+			// Авто-покупка предметов и вызов курьера работают даже если скрипт выключен
+			const rawTime = GameState.RawGameTime
+			const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
 				u.IsHero && u.IsAlive && u.IsControllable
 			)
 
-			for (const hero of heroes) {
+			for (const hero of controllableHeroes) {
+				const state = this.LoadUnitState(hero)
+				if (this.autoBuyItems.value && rawTime > state.lastBuyTime + 2.0) {
+					this.HandleAutoBuyItems(hero, state)
+					state.lastBuyTime = rawTime
+				}
+				if (this.autoCourier.value && rawTime > state.lastCourierTime + 5.0) {
+					this.HandleCourier(hero, state)
+					state.lastCourierTime = rawTime
+				}
+			}
+
+			if (!this.state.value) return
+
+			for (const hero of controllableHeroes) {
 				const state = this.LoadUnitState(hero)
 				this.OnUpdate(hero, state)
 			}
