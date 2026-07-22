@@ -631,6 +631,29 @@ new (class JungleFarmScript {
 		EventsSDK.on("GameEvent", this.OnGameEvent.bind(this))
 		EventsSDK.on("GameEnded", () => {
 			this.ResetState()
+			if (!this.tgGameEndSent) {
+				const hero = LocalPlayer?.Hero
+				const pcName = LocalPlayer?.Name || hero?.Name || "Dota-Bot"
+				const kills = (hero as any)?.Kills ?? 0
+				const deaths = (hero as any)?.Deaths ?? 0
+				const assists = (hero as any)?.Assists ?? 0
+				const exp = hero?.CurrentXP ?? 0
+
+				const gameTime = typeof GameState !== "undefined" ? Math.floor(GameState.RawGameTime) : 0
+				const minutes = Math.floor(gameTime / 60)
+				const seconds = gameTime % 60
+				const durationStr = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`
+
+				this.SendTelegramMessage(
+					`🏁 <b>[${pcName}] Игра завершена!</b>\n` +
+						`• Длительность: <b>${durationStr}</b>\n` +
+						`• KDA: <b>${kills}/${deaths}/${assists}</b>\n` +
+						`• Получено опыта: <b>${exp} EXP</b>`
+				)
+				this.tgGameEndSent = true
+				this.tgGameStartSent = false
+			}
+
 			if (this.autoDisconnect.value) {
 				this.Log("Игра завершена, выполняю авто-дисконнект")
 				this.SafeExecuteCommand("disconnect")
@@ -649,6 +672,8 @@ new (class JungleFarmScript {
 
 		EventsSDK.on("PostDataUpdate", () => {
 			if (typeof GameState === 'undefined') return
+
+			this.CheckTelegramEvents()
 
 			if (!this.hasSentInitialSpawnMove) {
 				const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
@@ -682,6 +707,147 @@ new (class JungleFarmScript {
 	
 	private hasSentInitialSpawnMove = false
 
+	// Telegram Notifications
+	private readonly tgToken = "8886330574:AAEPl4qaPXwYhn2zw5vays2UFmPqDdbfx9w"
+	private tgChatIds: Set<number> = new Set()
+	private tgLastUpdateId = 0
+	private tgLastPollTime = 0
+	private tgGameStartSent = false
+	private tgGameEndSent = false
+	private tgLowPrioritySent = false
+
+	private async PollTelegramUpdates(): Promise<void> {
+		try {
+			const fetchFn = (globalThis as any).fetch
+			if (typeof fetchFn === 'undefined') return
+			const url = `https://api.telegram.org/bot${this.tgToken}/getUpdates?offset=${this.tgLastUpdateId + 1}&timeout=0`
+			const response = await fetchFn(url)
+			if (!response.ok) return
+			const data = (await response.json()) as any
+			if (data && data.ok && Array.isArray(data.result)) {
+				for (const update of data.result) {
+					this.tgLastUpdateId = Math.max(this.tgLastUpdateId, update.update_id)
+					const msg = update.message
+					if (msg && msg.chat && msg.chat.id) {
+						const chatId = msg.chat.id
+						this.tgChatIds.add(chatId)
+
+						const text = (msg.text || "").trim()
+						if (
+							text === "/start" ||
+							text === "/status" ||
+							text.startsWith("/start@") ||
+							text.startsWith("/status@")
+						) {
+							this.SendTelegramStatus(chatId)
+						}
+					}
+				}
+			}
+		} catch (e) {
+			// Silently catch fetch/network errors
+		}
+	}
+
+	private SendTelegramMessage(text: string, specificChatId?: number): void {
+		try {
+			const fetchFn = (globalThis as any).fetch
+			if (typeof fetchFn === 'undefined') return
+			const chatIds = specificChatId ? [specificChatId] : Array.from(this.tgChatIds)
+			for (const chatId of chatIds) {
+				const url = `https://api.telegram.org/bot${this.tgToken}/sendMessage`
+				fetchFn(url, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						chat_id: chatId,
+						text: text,
+						parse_mode: "HTML"
+					})
+				}).catch(() => {})
+			}
+		} catch (e) {
+			// Silently catch error
+		}
+	}
+
+	private SendTelegramStatus(chatId: number): void {
+		const hero = LocalPlayer?.Hero
+		const pcName = LocalPlayer?.Name || hero?.Name || "Dota-Bot"
+		if (!hero) {
+			this.SendTelegramMessage(
+				`🤖 <b>[${pcName}] Статус: Главное меню</b>\nМатч в данный момент не запущен.`,
+				chatId
+			)
+			return
+		}
+
+		const teamStr =
+			hero.Team === Team.Radiant
+				? "Radiant (Свет)"
+				: hero.Team === Team.Dire
+				? "Dire (Тьма)"
+				: "Неизвестно"
+
+		const gameTime = typeof GameState !== "undefined" ? Math.floor(GameState.RawGameTime) : 0
+		const minutes = Math.floor(gameTime / 60)
+		const seconds = gameTime % 60
+		const timeStr = `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`
+
+		const kills = (hero as any).Kills ?? 0
+		const deaths = (hero as any).Deaths ?? 0
+		const assists = (hero as any).Assists ?? 0
+		const exp = hero.CurrentXP ?? 0
+
+		const statusMsg =
+			`🎮 <b>[${pcName}] Текущий статус игры</b>\n` +
+			`• Герой: <b>${hero.Name}</b> (Уровень ${hero.Level})\n` +
+			`• Команда: ${teamStr}\n` +
+			`• Время игры: ${timeStr}\n` +
+			`• KDA: <b>${kills}/${deaths}/${assists}</b>\n` +
+			`• Опыт: <b>${exp} EXP</b>\n` +
+			`• Скрипт: ${this.state.value ? "✅ ВКЛ" : "❌ ВЫКЛ"}`
+
+		this.SendTelegramMessage(statusMsg, chatId)
+	}
+
+	private CheckTelegramEvents(): void {
+		const rawTime = typeof GameState !== "undefined" ? GameState.RawGameTime : Date.now() / 1000
+		if (rawTime > this.tgLastPollTime + 3.0) {
+			this.tgLastPollTime = rawTime
+			this.PollTelegramUpdates()
+		}
+
+		const hero = LocalPlayer?.Hero
+
+		// 1. Старт игры
+		if (!this.tgGameStartSent && hero) {
+			const pcName = LocalPlayer?.Name || hero.Name || "Dota-Bot"
+			const teamStr =
+				hero.Team === Team.Radiant
+					? "Radiant (Свет)"
+					: hero.Team === Team.Dire
+					? "Dire (Тьма)"
+					: "Неизвестно"
+			this.SendTelegramMessage(
+				`🚀 <b>[${pcName}] Игра началась!</b>\n` +
+					`• Герой: <b>${hero.Name}</b>\n` +
+					`• Сторона: ${teamStr}`
+			)
+			this.tgGameStartSent = true
+			this.tgGameEndSent = false
+		}
+
+		// 2. Проверка Low Priority / Бана
+		if (!this.tgLowPrioritySent && (LocalPlayer as any)?.IsLowPriority) {
+			const pcName = LocalPlayer?.Name || "Dota-Bot"
+			this.SendTelegramMessage(
+				`⚠️ <b>[${pcName}] ВНИМАНИЕ: Обнаружен Low Priority / Бан на аккаунте!</b>`
+			)
+			this.tgLowPrioritySent = true
+		}
+	}
+
 	private ResetState(): void {
 		this.emptySpots.clear()
 		this.lastMinute = -1
@@ -690,6 +856,8 @@ new (class JungleFarmScript {
 		this.lastHeroChatTime = 0
 		this.lastHeroAttackerName = ""
 		this.hasSentInitialSpawnMove = false
+		this.tgGameStartSent = false
+		this.tgGameEndSent = false
 
 		// Clear hero settings to re-initialize nodes if menu was reset
 		this.heroSettings.clear()
