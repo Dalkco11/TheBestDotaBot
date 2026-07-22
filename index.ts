@@ -23,8 +23,7 @@ import {
 	DOTA_UNIT_TARGET_TYPE,
 	ExecuteOrder,
 	Tree,
-	PhysicalItem,
-	HttpSDK
+	PhysicalItem
 } from "github.com/octarine-public/wrapper/index"
 
 
@@ -719,16 +718,17 @@ new (class JungleFarmScript {
 
 	private async universalFetch(url: string, options: any = {}): Promise<any> {
 		try {
-			if (typeof HttpSDK !== 'undefined') {
-				if (typeof (HttpSDK as any).Fetch === 'function') {
-					return await (HttpSDK as any).Fetch(url, options)
+			const httpSdk = (globalThis as any).HttpSDK || (typeof window !== 'undefined' && (window as any).HttpSDK)
+			if (httpSdk) {
+				if (typeof httpSdk.Fetch === 'function') {
+					return await httpSdk.Fetch(url, options)
 				}
-				if (typeof (HttpSDK as any).Request === 'function') {
-					return await (HttpSDK as any).Request(url, options)
+				if (typeof httpSdk.Request === 'function') {
+					return await httpSdk.Request(url, options)
 				}
-				if (typeof (HttpSDK as any).Get === 'function' && (!options.method || options.method === 'GET')) {
+				if (typeof httpSdk.Get === 'function' && (!options.method || options.method === 'GET')) {
 					return new Promise(resolve => {
-						(HttpSDK as any).Get(url, (res: any) => {
+						httpSdk.Get(url, (res: any) => {
 							try {
 								const parsed = typeof res === 'string' ? JSON.parse(res) : res
 								resolve({ ok: true, json: async () => parsed, text: async () => typeof res === 'string' ? res : JSON.stringify(res) })
@@ -738,9 +738,9 @@ new (class JungleFarmScript {
 						})
 					})
 				}
-				if (typeof (HttpSDK as any).Post === 'function' && options.method === 'POST') {
+				if (typeof httpSdk.Post === 'function' && options.method === 'POST') {
 					return new Promise(resolve => {
-						(HttpSDK as any).Post(url, options.body || {}, (res: any) => {
+						httpSdk.Post(url, options.body || {}, (res: any) => {
 							try {
 								const parsed = typeof res === 'string' ? JSON.parse(res) : res
 								resolve({ ok: true, json: async () => parsed, text: async () => typeof res === 'string' ? res : JSON.stringify(res) })
