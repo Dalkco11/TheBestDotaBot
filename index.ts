@@ -321,6 +321,7 @@ new (class JungleFarmScript {
 	private readonly lockCamera = this.debugNode.AddToggle("Центрировать камеру", false, "Принудительно центрировать камеру (dota_camera_lock)")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
 	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
+	private readonly tpAfterHeal = this.debugNode.AddToggle("ТП после хила", true, "Использовать свиток ТП на союзных крипов или башню после лечения")
 	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
 	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
 	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", true, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
@@ -1336,6 +1337,7 @@ new (class JungleFarmScript {
 				if (state.isGoingToFountain && this.returnAfterHeal.value && state.lastPosBeforeHeal && !canFarmJungle && hero.Level <= 4) {
 					state.isReturningAfterHeal = true
 					this.Log(`Здоровье восстановлено, возвращаюсь на позицию: ${state.lastPosBeforeHeal.x.toFixed(0)}, ${state.lastPosBeforeHeal.y.toFixed(0)}`, hero)
+					this.TryTpAfterHeal(hero, state)
 				} else if (state.isGoingToFountain && (canFarmJungle || hero.Level > 4)) {
 					const reason = hero.Level > 4 ? "уровень > 4" : "уровень позволяет фармить лес"
 					this.Log(`Здоровье восстановлено, ${reason}, возврат на линию пропущен`, hero)
@@ -2436,6 +2438,51 @@ new (class JungleFarmScript {
 			this.Log(`Farm Error: ${e}`, hero)
 			return false
 		}
+	}
+
+	private TryTpAfterHeal(hero: Unit, state: UnitState): boolean {
+		if (!this.tpAfterHeal.value) return false
+		const rawTime = GameState.RawGameTime
+		if (rawTime < state.lastTpTime + 15.0) return false
+
+		const tpScroll = hero.Inventory.GetItem(15) ?? hero.GetItemByName("item_tpscroll")
+		if (!tpScroll || !tpScroll.IsReady) return false
+
+		// Ищем союзных крипов на нашей линии
+		const allies = this.cachedCreeps.filter(c =>
+			!c.IsEnemy(hero) &&
+			!c.IsNeutral &&
+			c.IsAlive &&
+			c.IsVisible &&
+			!c.IsPhantom &&
+			!c.IsInvulnerable &&
+			this.IsOnSelectedLane(c.Position, hero, state)
+		)
+
+		let tpTarget: Unit | undefined
+
+		if (allies.length > 0) {
+			if (state.lastPosBeforeHeal) {
+				tpTarget = allies.sort((a, b) => a.Distance2D(state.lastPosBeforeHeal!) - b.Distance2D(state.lastPosBeforeHeal!))[0]
+			} else {
+				tpTarget = allies.sort((a, b) => b.Distance2D(hero.Position) - a.Distance2D(hero.Position))[0]
+			}
+		}
+
+		if (!tpTarget) {
+			tpTarget = this.GetFurthestAlliedTower(hero, state)
+		}
+
+		if (tpTarget) {
+			const targetName = tpTarget.Name.replace("npc_dota_", "")
+			this.Log(`ТП после хила: телепортация к ${targetName}`, hero)
+			hero.CastTarget(tpScroll, tpTarget, false, true)
+			state.lastTpTime = rawTime
+			state.lastOrderTime = rawTime
+			return true
+		}
+
+		return false
 	}
 
 	private GetNearestEnabledSpot(hero: Unit, state: UnitState): JungleSpot | null {
