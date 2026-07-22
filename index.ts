@@ -1106,8 +1106,8 @@ new (class JungleFarmScript {
 				const xpSecAgo = Math.floor(GameState.RawGameTime - (mainState.lastXpChangeTime ?? GameState.RawGameTime))
 
 				const apm = mainState.actionTimestamps.length
-				const apmPosX = 200
-				const apmPosY = 280
+				const apmPosX = screenSize.x - 180
+				const apmPosY = 200
 				RendererSDK.FilledRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), new Color(0, 0, 0, 180), 10)
 				RendererSDK.OutlinedRect(new Vector2(apmPosX - 10, apmPosY - 5), new Vector2(170, 65), 1, new Color(0, 255, 255, 100), 10)
 				RendererSDK.Text(`APM: ${apm}`, new Vector2(apmPosX + 1, apmPosY + 1), new Color(0, 0, 0, 200), "Roboto", 20, 900)
