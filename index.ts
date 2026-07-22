@@ -77,7 +77,65 @@ interface UnitState {
 	lastCourierTime: number
 	lastNeutralCheckTime: number
 	assignedLane?: 1 | 2
+	lastBuyTime: number
 }
+
+interface ItemBuildStep {
+	name: string
+	displayName: string
+	itemId: number
+	components: { name: string; itemId: number }[]
+}
+
+const autoBuyBuild: ItemBuildStep[] = [
+	{
+		name: "item_quelling_blade",
+		displayName: "Топор",
+		itemId: 11,
+		components: [
+			{ name: "item_quelling_blade", itemId: 11 }
+		]
+	},
+	{
+		name: "item_bracer",
+		displayName: "Брейсер",
+		itemId: 73,
+		components: [
+			{ name: "item_circlet", itemId: 16 },
+			{ name: "item_gauntlets", itemId: 13 },
+			{ name: "item_recipe_bracer", itemId: 72 }
+		]
+	},
+	{
+		name: "item_phase_boots",
+		displayName: "Фейзы",
+		itemId: 50,
+		components: [
+			{ name: "item_boots", itemId: 29 },
+			{ name: "item_blades_of_attack", itemId: 12 },
+			{ name: "item_chainmail", itemId: 17 }
+		]
+	},
+	{
+		name: "item_mask_of_madness",
+		displayName: "МОМ",
+		itemId: 172,
+		components: [
+			{ name: "item_lifesteal", itemId: 26 },
+			{ name: "item_quarterstaff", itemId: 10 }
+		]
+	},
+	{
+		name: "item_yasha",
+		displayName: "Яша",
+		itemId: 170,
+		components: [
+			{ name: "item_blade_of_alacrity", itemId: 18 },
+			{ name: "item_boots_of_elves", itemId: 15 },
+			{ name: "item_recipe_yasha", itemId: 169 }
+		]
+	}
+]
 
 interface WardSpot {
 	name: string
@@ -315,6 +373,9 @@ new (class JungleFarmScript {
 	private readonly autoCourier = this.courierNode.AddToggle("Авто-курьер", true, "Приносить предметы из тайника автоматически")
 	private readonly courierSpeed = this.courierNode.AddToggle("Ускорение курьера", true, "Использовать ускорение, если оно готово")
 
+	private readonly shopNode = this.autoNode.AddNode("Авто-покупка", "", "Настройки автоматической покупки предметов")
+	private readonly autoBuyItems = this.shopNode.AddToggle("Авто-покупка", true, "Автоматически покупать Топор, Брейсер, Фейзы, МОМ, Яша")
+
 	private readonly neutralNode = this.autoNode.AddNode("Нейтралки", "", "Работа с нейтральными предметами")
 	private readonly autoNeutralPick = this.neutralNode.AddToggle("Подбор нейтралок", true, "Подбирать выпавшие жетоны и предметы")
 	private readonly autoUseToken = this.neutralNode.AddToggle("Использовать жетон", true, "Использовать жетон, если слот пуст")
@@ -443,7 +504,8 @@ new (class JungleFarmScript {
 				actionTimestamps: [],
 				lastCourierTime: 0,
 				lastNeutralCheckTime: 0,
-				assignedLane: undefined
+				assignedLane: undefined,
+				lastBuyTime: 0
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -1212,6 +1274,12 @@ new (class JungleFarmScript {
 				state.lastCourierTime = rawTime
 			}
 
+			// Авто-покупка предметов (раз в 2 сек)
+			if (this.autoBuyItems.value && rawTime > state.lastBuyTime + 2.0) {
+				this.HandleAutoBuyItems(hero, state)
+				state.lastBuyTime = rawTime
+			}
+
 			// Нейтральные предметы (раз в 2 сек)
 			if (this.autoNeutralPick.value && rawTime > state.lastNeutralCheckTime + 2.0) {
 				this.HandleNeutralItems(hero, state)
@@ -1435,6 +1503,34 @@ new (class JungleFarmScript {
 				this.SafeExecuteCommand("dota_courier_burst") 
 			}
 			state.lastCourierTime = GameState.RawGameTime
+		}
+	}
+
+	private HasItemInInventoryOrStash(hero: Unit, itemName: string): boolean {
+		for (let i = 0; i <= 16; i++) {
+			const item = hero.Inventory.GetItem(i)
+			if (item && item.Name === itemName) return true
+		}
+		return false
+	}
+
+	private HandleAutoBuyItems(hero: Unit, state: UnitState): void {
+		if (!this.autoBuyItems.value) return
+
+		for (const step of autoBuyBuild) {
+			// Проверяем, есть ли у нас уже готовый предмет
+			if (this.HasItemInInventoryOrStash(hero, step.name)) {
+				continue
+			}
+
+			// Если готового предмета нет, ищем первый недостающий компонент
+			for (const comp of step.components) {
+				if (!this.HasItemInInventoryOrStash(hero, comp.name)) {
+					this.Log(`Авто-покупка: покупка ${comp.name} (${step.displayName})`, hero)
+					hero.PurchaseItem(comp.itemId)
+					return // Покупаем только 1 предмет за итерацию
+				}
+			}
 		}
 	}
 
