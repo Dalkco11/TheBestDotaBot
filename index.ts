@@ -279,16 +279,6 @@ new (class JungleFarmScript {
 	private readonly autoWard = this.safetyNode.AddToggle("Авто-вардинг", true, "Автоматически ставить варды, если они есть в инвентаре")
 	private readonly wardRadius = this.safetyNode.AddSlider("Радиус активации варда", 1200, 500, 3000, 0, "Если бот пробегает в этом радиусе от точки, он поставит вард")
 
-	private readonly ignoreUnitsNode = this.entry.AddNode("Игнор юнитов", "", "Список юнитов, которых скрипт будет игнорировать")
-	private readonly ignoreBroodlings = this.ignoreUnitsNode.AddToggle("Паучки Бруды", true)
-	private readonly ignoreLoneBear = this.ignoreUnitsNode.AddToggle("Медведь Друида", true)
-	private readonly ignoreEidolons = this.ignoreUnitsNode.AddToggle("Энигма (Эйдолоны)", true)
-	private readonly ignoreTreants = this.ignoreUnitsNode.AddToggle("Фурион (Пеньки)", true)
-	private readonly ignoreWolves = this.ignoreUnitsNode.AddToggle("Волки Люкана", true)
-	private readonly ignoreGolems = this.ignoreUnitsNode.AddToggle("Големы Варлока", true)
-	private readonly ignoreBeastmaster = this.ignoreUnitsNode.AddToggle("Бистмастер (Птица/кОбан)", true)
-	private readonly ignoreIllusions = this.ignoreUnitsNode.AddToggle("Все иллюзии", true)
-
 	private readonly autoNode = this.entry.AddNode("Автоматизация", "", "Авто-предметы и способности")
 	private readonly itemsNode = this.autoNode.AddNode("Авто-предметы")
 	private readonly usePhase = this.itemsNode.AddToggle("Phase Boots", true)
@@ -378,17 +368,12 @@ new (class JungleFarmScript {
 	private readonly autoUseToken = this.neutralNode.AddToggle("Использовать жетон", true, "Использовать жетон, если слот пуст")
 	private readonly sendExtraToStash = this.neutralNode.AddToggle("Лишнее в тайник", true, "Отправлять лишние нейтралки на базу")
 
-	private readonly devNode = this.entry.AddNode("Dev", "", "Функции в разработке")
-	private readonly autoNeutral = this.devNode.AddToggle("Авто-выбор нейтралки", true, "Автоматически открывать и выбирать нейтральный предмет")
-	private readonly forceNeutralButton = this.devNode.AddButton("Выбрать нейтралку СЕЙЧАС", "Принудительно попытаться открыть жетон и выбрать предмет")
-
 	private readonly spotToggles: Map<string, Menu.Toggle> = new Map()
 	private readonly spotLevelSliders: Map<string, Menu.Slider> = new Map()
 
 	private readonly emptySpots: Set<string> = new Set()
 	private readonly heroSettings: Map<string, HeroLevelingSettings> = new Map()
 
-	private lastPanoramaTime = 0
 	private lastMinute = -1
 	private allyAtSpotSince: Map<string, number> = new Map()
 	private lastCameraLock = false
@@ -624,15 +609,6 @@ new (class JungleFarmScript {
 	}
 
 	constructor() {
-		this.forceNeutralButton.OnValue(() => {
-			const hero = LocalPlayer?.Hero
-			if (hero) {
-				const state = this.LoadUnitState(hero)
-				this.Log("Принудительный выбор нейтралки...", hero)
-				this.HandlePanorama(hero, state, true)
-			}
-		})
-
 		const campNodes = new Map<CampType, Menu.Node>()
 		const types = [CampType.Small, CampType.Medium, CampType.Large, CampType.Ancient]
 
@@ -1012,9 +988,6 @@ new (class JungleFarmScript {
 			// Skip logic if game hasn't truly started
 			if (GameState.RawGameTime < 0.5) {
 				const unitState = this.LoadUnitState(hero)
-				if (this.autoNeutral.value) {
-					this.HandlePanorama(hero, unitState)
-				}
 				if (this.autoWard.value) {
 					this.HandleAutoWarding(hero, unitState)
 				}
@@ -1315,12 +1288,6 @@ new (class JungleFarmScript {
 				state.nextOrderDelay = 0.05 + Math.random() * 0.1
 			}
 
-			// Вызов HandlePanorama раз в 3 секунды
-			if (rawTime > this.lastPanoramaTime + 3.0) {
-				this.HandlePanorama(hero, state)
-				this.lastPanoramaTime = rawTime
-			}
-
 			// Глобальное отслеживание фарма союзников
 			this.TrackGlobalJungleStatus(hero)
 
@@ -1601,30 +1568,6 @@ new (class JungleFarmScript {
 		]
 		const list = type === "damage" ? damagePhrases : deathPhrases
 		return list[Math.floor(Math.random() * list.length)]
-	}
-
-	private HandlePanorama(hero: Unit, state: UnitState, forced: boolean = false): void {
-		if (typeof Panorama === 'undefined') return
-		const rawTime = GameState.RawGameTime
-
-		if (rawTime < state.lastOrderTime + 1.0) return
-		if (!forced && (!this.autoNeutral.value || hero.Team === Team.None)) return
-
-		// Проверка нейтрального слота (16) строго через Inventory.GetItem
-		const neutralItem = hero.Inventory.GetItem(16)
-
-		if (!neutralItem) {
-			// На данном API автоматический выбор (использование жетона/токена) невозможен.
-		} else if (this.useNeutral.value && hero.IsAttacking) {
-			// Авто-использование уже экипированного предмета
-			if (neutralItem.IsReady) {
-				const target = hero.Target
-				if (target instanceof Creep && target.IsAlive && hero.Distance2D(target) < 600) {
-					this.Log(`Использую нейтралку: ${neutralItem.Name}`, hero)
-					hero.CastNoTarget(neutralItem, false, true)
-				}
-			}
-		}
 	}
 
 	private AutoItems(hero: Unit, state: UnitState): boolean {
@@ -2618,14 +2561,14 @@ new (class JungleFarmScript {
 
 	private IsIgnoredUnit(unit: Unit): boolean {
 		const name = unit.Name
-		if (this.ignoreBroodlings.value && name.includes("_spider")) return true
-		if (this.ignoreLoneBear.value && name.includes("_bear")) return true
-		if (this.ignoreEidolons.value && name.includes("_eidolon")) return true
-		if (this.ignoreTreants.value && name.includes("_treant")) return true
-		if (this.ignoreWolves.value && name.includes("_wolf")) return true
-		if (this.ignoreGolems.value && name.includes("_golem")) return true
-		if (this.ignoreBeastmaster.value && (name.includes("beastmaster_hawk") || name.includes("beastmaster_boar"))) return true
-		if (this.ignoreIllusions.value && unit.IsIllusion) return true
+		if (name.includes("_spider")) return true
+		if (name.includes("_bear")) return true
+		if (name.includes("_eidolon")) return true
+		if (name.includes("_treant")) return true
+		if (name.includes("_wolf")) return true
+		if (name.includes("_golem")) return true
+		if (name.includes("beastmaster_hawk") || name.includes("beastmaster_boar")) return true
+		if (unit.IsIllusion) return true
 		return false
 	}
 
