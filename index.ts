@@ -319,12 +319,10 @@ new (class JungleFarmScript {
 
 
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Технические функции для тестирования")
-	private readonly lockCamera = this.debugNode.AddToggle("Центрировать камеру", false, "Принудительно центрировать камеру (dota_camera_lock)")
 	private readonly autoEnable = this.debugNode.AddToggle("Авто-включение скрипта", true, "Автоматически включать скрипт, если он выключен, при достижении времени")
 	private readonly returnAfterHeal = this.debugNode.AddToggle("Возврат после хила", true, "После лечения возвращаться на позицию, где было мало HP")
 	private readonly tpAfterHeal = this.debugNode.AddToggle("ТП после хила", true, "Использовать свиток ТП на союзных крипов или башню после лечения")
 	private readonly autoDisableInMenu = this.debugNode.AddToggle("Выключать в главном меню", true, "Автоматически выключать скрипт при выходе в главное меню")
-	private readonly disableResetBetweenGames = this.debugNode.AddToggle("Отключить сброс между играми", false, "Не очищать состояние скрипта при начале новой игры (может вызвать баги)")
 	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", true, "Выводить детальную информацию о фильтрах крипов и причинах ожидания прямо на экран")
 	private readonly drawDebugLog = this.debugNode.AddToggle("Показывать лог на экране", true, "Отрисовка последних действий скрипта в углу экрана")
 	private readonly forcedBaseExit = this.debugNode.AddToggle("Принудительно уходить с базы", true, "Если герой на базе и нет крипов, идти к самой дальней союзной башне")
@@ -334,9 +332,6 @@ new (class JungleFarmScript {
 	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 0, "На какой минуте игры автоматически включить скрипт")
 	private readonly lanePriorityUntil4 = this.debugNode.AddToggle("Приоритет на линии до 4 лвл", true, "Сначала бить крипов на линии, а потом уже идти на кемпы (до 4 уровня)")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 0, "С какого уровня героя начнет работать отправка сообщений в чат")
-	private readonly setSmallCampsLvl = this.debugNode.AddButton("Авто: Маленькие кемпы (1 лвл)", "Установить уровень 1 для всех маленьких лагерей")
-	private readonly setMediumCampsLvl = this.debugNode.AddButton("Авто: Средние кемпы (4 лвл)", "Установить уровень 4 для всех средних лагерей")
-	private readonly setLargeCampsLvl = this.debugNode.AddButton("Авто: Большие и ост. (5 лвл)", "Установить уровень 5 для всех остальных лагерей")
 	private readonly pickAllRunes = this.debugNode.AddToggle("Подбор всех рун", true, "Автоматически подбирать любые ближайшие руны (баунти, активные, мудрости)")
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly showGameTimer = this.debugNode.AddToggle("Показывать игровой таймер", true, "Отображать время игры под статусом")
@@ -366,8 +361,6 @@ new (class JungleFarmScript {
 
 	private lastMinute = -1
 	private allyAtSpotSince: Map<string, number> = new Map()
-	private lastCameraLock = false
-	private lastCameraLockTime = 0
 	private lastLogicTime = 0
 	private lastHeroChatTime = 0
 	private lastHeroAttackerName: string = ""
@@ -633,51 +626,13 @@ new (class JungleFarmScript {
 			this.controlAllAllies.value = !this.controlAllAllies.value
 		})
 
-		this.setSmallCampsLvl.OnValue(() => {
-			for (const spot of jungleSpots) {
-				if (spot.type === CampType.Small) {
-					const slider = this.spotLevelSliders.get(spot.name)
-					if (slider) slider.value = 1
-				}
-			}
-			this.Log("Установлен 1 лвл для всех маленьких кемпов")
-		})
-
-		this.setMediumCampsLvl.OnValue(() => {
-			for (const spot of jungleSpots) {
-				if (spot.type === CampType.Medium) {
-					const slider = this.spotLevelSliders.get(spot.name)
-					if (slider) slider.value = 4
-				}
-			}
-			this.Log("Установлен 4 лвл для всех средних кемпов")
-		})
-
-		this.setLargeCampsLvl.OnValue(() => {
-			for (const spot of jungleSpots) {
-				if (spot.type === CampType.Large || spot.type === CampType.Ancient) {
-					const slider = this.spotLevelSliders.get(spot.name)
-					if (slider) slider.value = 5
-				}
-			}
-			this.Log("Установлен 5 лвл для всех больших и древних кемпов")
-		})
-
 		EventsSDK.on("Draw", this.OnDraw.bind(this))
 		EventsSDK.on("GameStarted", () => {
-			if (!this.disableResetBetweenGames.value) {
-				this.ResetState()
-			} else {
-				this.Log("Сброс игры пропущен (Отладка)")
-			}
+			this.ResetState()
 		})
 		EventsSDK.on("GameEvent", this.OnGameEvent.bind(this))
 		EventsSDK.on("GameEnded", () => {
-			this.SafeExecuteCommand("dota_camera_lock 0")
-			this.lastCameraLock = false
-			if (!this.disableResetBetweenGames.value) {
-				this.ResetState()
-			}
+			this.ResetState()
 		})
 		EventsSDK.on("PrepareUnitOrders", (order: ExecuteOrder) => {
 			if (typeof GameState !== 'undefined') {
@@ -934,24 +889,7 @@ new (class JungleFarmScript {
 				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин)`)
 			}
 
-			// Lock camera on hero using console command with active check
-			if (hero.IsAlive && this.state.value && this.lockCamera.value && typeof Camera !== 'undefined' && typeof IOBuffer !== 'undefined' && IOBuffer !== null) {
-				void Camera.Position // Touch to populate IOBuffer
-				if (typeof IOBuffer[0] === 'number') {
-					const camPos = new Vector3(IOBuffer[0], IOBuffer[1], IOBuffer[2])
-					const isCentered = hero.Distance2D(camPos) <= 100
 
-					if (!this.lastCameraLock || (!isCentered && GameState.RawGameTime > this.lastCameraLockTime + 1.0)) {
-						this.SafeExecuteCommand("dota_camera_lock 1")
-						this.lastCameraLock = true
-						this.lastCameraLockTime = GameState.RawGameTime
-					}
-				}
-			} else if (this.lastCameraLock) {
-				this.SafeExecuteCommand("dota_camera_lock 0")
-				this.lastCameraLock = false
-				this.lastCameraLockTime = 0
-			}
 
 
 			if (this.controlAllAllies.value && this.state.value) {
