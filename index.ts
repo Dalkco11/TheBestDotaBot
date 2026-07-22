@@ -323,7 +323,7 @@ new (class JungleFarmScript {
 	private readonly maxAPMStr = this.debugNode.AddSlider("Макс. АПМ", 150, 10, 310, 0)
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly autoDisconnect = this.debugNode.AddToggle("Авто-дисконнект в конце", true, "Автоматически выходить в главное меню по завершению игры")
-	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "Использовать свиток ТП на базу при застревании (например на ХГ)")
+	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "ТП к союзным крипам/башне у фарм-точки при застревании на ХГ или в лесу")
 
 	private readonly autoEnable = { value: true }
 	private readonly returnAfterHeal = { value: true }
@@ -2669,19 +2669,13 @@ new (class JungleFarmScript {
 
 				const dist = hero.Distance2D(nearestSpot.pos)
 
-				if (rawTime > state.stuckCheckTime + 4.0) {
+				if (rawTime > state.stuckCheckTime + 8.0) {
 					if (state.lastPosForStuckCheck && hero.Distance2D(state.lastPosForStuckCheck) < 75) {
 						if (this.autoStuckTp.value && rawTime > state.lastTpTime + 15) {
-							const tp = hero.Inventory.GetItem(15) ?? hero.GetItemByName("item_tpscroll")
-							if (tp && tp.IsReady) {
-								const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-								if (fountain) {
-									hero.CastPosition(tp, fountain.Position, false, true)
-									state.lastTpTime = rawTime
-									state.lastOrderTime = rawTime
-									this.Log("Использую ТП на базу (Застревание / ХГ)", hero)
-									return true
-								}
+							if (this.TryTpToFarmSpot(hero, state, nearestSpot.pos)) {
+								state.lastPosForStuckCheck = undefined
+								state.stuckCheckTime = rawTime
+								return true
 							}
 						}
 						if (dist < 700) {
@@ -2829,6 +2823,57 @@ new (class JungleFarmScript {
 			hero.CastTarget(tpScroll, tpTarget, false, true)
 			state.lastTpTime = rawTime
 			state.lastOrderTime = rawTime
+			return true
+		}
+
+		return false
+	}
+
+	private TryTpToFarmSpot(hero: Unit, state: UnitState, targetPos?: Vector3): boolean {
+		const rawTime = GameState.RawGameTime
+		if (rawTime < state.lastTpTime + 15.0) return false
+
+		const tpScroll = hero.Inventory.GetItem(15) ?? hero.GetItemByName("item_tpscroll")
+		if (!tpScroll || !tpScroll.IsReady) return false
+
+		const dest = targetPos ?? hero.Position
+
+		// 1. Ищем союзных крипов наиболее близких к целевой точке фарма
+		const allies = this.cachedCreeps.filter(c =>
+			!c.IsEnemy(hero) &&
+			!c.IsNeutral &&
+			c.IsAlive &&
+			c.IsVisible &&
+			!c.IsPhantom &&
+			!c.IsInvulnerable
+		)
+
+		let tpTarget: Unit | undefined
+
+		if (allies.length > 0) {
+			tpTarget = allies.sort((a, b) => a.Distance2D(dest) - b.Distance2D(dest))[0]
+		}
+
+		if (!tpTarget) {
+			tpTarget = this.GetFurthestAlliedTower(hero, state)
+		}
+
+		if (tpTarget) {
+			const targetName = tpTarget.Name.replace("npc_dota_", "")
+			this.Log(`Авто-ТП при застревании: телепортация к ${targetName}`, hero)
+			hero.CastTarget(tpScroll, tpTarget, false, true)
+			state.lastTpTime = rawTime
+			state.lastOrderTime = rawTime
+			return true
+		}
+
+		// Если нет ни крипов, ни башен — ТП на базу
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		if (fountain) {
+			hero.CastPosition(tpScroll, fountain.Position, false, true)
+			state.lastTpTime = rawTime
+			state.lastOrderTime = rawTime
+			this.Log("Авто-ТП при застревании: телепортация на базу", hero)
 			return true
 		}
 
