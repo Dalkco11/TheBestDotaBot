@@ -2501,18 +2501,27 @@ new (class JungleFarmScript {
 	}
 
 	private GetNearestEnabledSpot(hero: Unit, state: UnitState): JungleSpot | null {
+		const targetLane = this.GetTargetLane(hero, state)
+
 		let enabledSpots = jungleSpots.filter(spot => {
 			if (!this.spotToggles.get(spot.name)?.value) return false
 			const minLevel = this.spotLevelSliders.get(spot.name)?.value ?? 1
 			if (hero.Level < minLevel) return false
 			if (this.ownJungleOnly.value && spot.team !== hero.Team) return false
 			if (this.emptySpots.has(spot.name)) return false
+
+			// Строго ограничиваем споты стороной нашей линии!
+			const isSpotTop = spot.pos.y > spot.pos.x
+			const isSpotBot = spot.pos.x > spot.pos.y
+			if (targetLane === 1 && !isSpotTop) return false
+			if (targetLane === 2 && !isSpotBot) return false
+
 			return true
 		})
 
-		// На стадии лайнинга ограничиваем поиск ближайших спотов радиусом 500
-		if (hero.Level < this.laneOnlyUntilLevel.value) {
-			enabledSpots = enabledSpots.filter(spot => hero.Distance2D(spot.pos) < 500)
+		// На стадии лайнинга или ранней игре ограничение 3500 от героя
+		if (hero.Level < this.laneOnlyUntilLevel.value || hero.Level < 6) {
+			enabledSpots = enabledSpots.filter(spot => hero.Distance2D(spot.pos) < 3500)
 		}
 
 		if (enabledSpots.length === 0) return null
@@ -2532,7 +2541,7 @@ new (class JungleFarmScript {
 	private GetNearestLaneCreep(hero: Unit, state: UnitState): Creep | undefined {
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 		const isAtBase = fountain && hero.Distance2D(fountain) < 5500
-		const maxDist = (isAtBase || state.isReturningAfterHeal) ? 15000 : 6000
+		const maxDist = (isAtBase || state.isReturningAfterHeal) ? 4000 : 3500
 
 		if (this.detailedDebug.value && state.isReturningAfterHeal) {
 			this.Log(`Поиск (HeroTeam:${hero.Team} Base:${isAtBase} Return:true)`, hero)
@@ -2626,10 +2635,7 @@ new (class JungleFarmScript {
 	}
 
 	private GetTargetLane(hero: Unit, state?: UnitState): 1 | 2 {
-		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
-		const isAtBase = fountain && hero.Distance2D(fountain) < 5500
-
-		if (state && state.assignedLane && !isAtBase) {
+		if (state && state.assignedLane) {
 			return state.assignedLane
 		}
 
