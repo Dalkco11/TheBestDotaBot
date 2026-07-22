@@ -76,6 +76,7 @@ interface UnitState {
 	actionTimestamps: number[]
 	lastCourierTime: number
 	lastNeutralCheckTime: number
+	assignedLane?: 1 | 2
 }
 
 interface WardSpot {
@@ -201,7 +202,6 @@ new (class JungleFarmScript {
 	private readonly laneFarm = this.laneNode.AddToggle("Фарм линии", true, "Разрешить герою фармить крипов на линии")
 	private readonly laneOnlyUntilLevel = this.laneNode.AddSlider("Фарм линии до уровня", 1, 1, 30, 0, "Герой будет игнорировать лес и фармить только линию до этого уровня")
 	private readonly laneWaitTime = this.laneNode.AddSlider("Ожидание крипов (сек)", 30, 0, 120, 0, "Сколько секунд ждать новую пачку на линии")
-	private readonly lanePriority = this.laneNode.AddDropdown("Приоритет линии", ["Автоматически", "Только Верх", "Только Низ", "Меньше союзников", "Легкая линия", "Сложная линия"], 4, "Какую линию фармить в первую очередь (до уровня леса)")
 	private readonly randomWalkWaiting = this.laneNode.AddToggle("Случайная ходьба", true, "Активное движение в безопасной зоне при ожидании")
 	private readonly chaoticMoveAroundLastCreep = this.laneNode.AddToggle("Мансы у места смерти", true, "Движение вокруг позиции последнего убитого крипа")
 	private readonly laneTowerSafety = this.laneNode.AddToggle("Доп. радиус от башен", true, "Увеличивает безопасную дистанцию до башен на стадии линии")
@@ -442,7 +442,8 @@ new (class JungleFarmScript {
 				lastBypassTime: 0,
 				actionTimestamps: [],
 				lastCourierTime: 0,
-				lastNeutralCheckTime: 0
+				lastNeutralCheckTime: 0,
+				assignedLane: undefined
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -757,7 +758,7 @@ new (class JungleFarmScript {
 						const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(u))
 						const isAtBase = fountain && u.Distance2D(fountain) < 5500
 
-						if (!isAtBase && (!this.IsInTowerRange(victim.Position, u) || !this.IsInAnyTowerRange(victim.Position, u)) && (!this.ignoreMid.value || !this.IsMidLane(victim.Position))) {
+						if (!isAtBase && (!this.IsInTowerRange(victim.Position, u) || !this.IsInAnyTowerRange(victim.Position, u)) && !this.IsMidLane(victim.Position)) {
 							const pos = victim.Position
 							state.lastCreepDeathPos = new Vector3(pos.x, pos.y, pos.z)
 						}
@@ -1284,7 +1285,7 @@ new (class JungleFarmScript {
 
 			const nearbyCreep = this.cachedCreeps.find(c =>
 				!c.IsNeutral && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 2500 && !this.IsInTowerRange(c.Position, hero) &&
-				this.IsOnSelectedLane(c.Position, hero)
+				!this.IsMidLane(c.Position) && this.IsOnSelectedLane(c.Position, hero, state)
 			)
 			if (nearbyCreep) {
 				state.lastCreepDeathPos = nearbyCreep.Position
@@ -2179,13 +2180,13 @@ new (class JungleFarmScript {
 				if (this.randomWalkWaiting.value || (this.chaoticMoveAroundLastCreep.value && state.lastCreepDeathPos)) {
 					let centerPos = state.lastCreepDeathPos
 
-					// Если нет точки смерти, выбираем позицию на линии принудительно
-					if (!centerPos) {
-						centerPos = this.GetDefaultLanePos(hero)
+					// Если нет точки смерти или она в миду, выбираем позицию на боковой линии принудительно
+					if (!centerPos || this.IsMidLane(centerPos)) {
+						centerPos = this.GetDefaultLanePos(hero, state)
 					}
 
-					if (this.IsInTowerRange(centerPos, hero)) {
-						centerPos = hero.Position
+					if (this.IsInTowerRange(centerPos, hero) || this.IsMidLane(centerPos)) {
+						centerPos = this.GetDefaultLanePos(hero, state)
 					}
 
 					const distToCenter = hero.Distance2D(centerPos)
@@ -2212,7 +2213,7 @@ new (class JungleFarmScript {
 								centerPos.z
 							)
 
-							if (!this.IsInTowerRange(randomPos, hero)) {
+							if (!this.IsInTowerRange(randomPos, hero) && !this.IsMidLane(randomPos)) {
 								state.lastRandomWalkPos = randomPos
 								foundValidPos = true
 							}
@@ -2347,7 +2348,7 @@ new (class JungleFarmScript {
 					}
 				}
 
-				if (this.laneFarm.value && state.lastCreepDeathPos) {
+				if (this.laneFarm.value && state.lastCreepDeathPos && !this.IsMidLane(state.lastCreepDeathPos)) {
 					this.setStatus(state, "Возврат на линию", hero)
 					let target = state.lastCreepDeathPos
 
@@ -2373,7 +2374,7 @@ new (class JungleFarmScript {
 
 				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
 				if (this.forcedBaseExit.value && distToFountain < 6000 && hero.Level < this.laneOnlyUntilLevel.value && !state.isReturningAfterHeal) {
-					const furthestTower = this.GetFurthestAlliedTower(hero)
+					const furthestTower = this.GetFurthestAlliedTower(hero, state)
 					if (furthestTower) {
 						this.setStatus(state, "Принудительный выход", hero)
 						const movePos = this.GetSafeMovePos(hero.Position, furthestTower.Position, hero, state)
@@ -2439,7 +2440,7 @@ new (class JungleFarmScript {
 				const isNotInvulnerable = !c.IsInvulnerable
 				const dist = hero.Distance2D(c)
 				const distValid = dist < maxDist
-				const laneValid = this.IsOnSelectedLane(c.Position, hero)
+				const laneValid = this.IsOnSelectedLane(c.Position, hero, state)
 				const notIgnored = !this.IsIgnoredUnit(c)
 
 				const allValid = isEnemy && isNotNeutral && isAlive && isVisible && isNotPhantom && isNotInvulnerable && distValid && laneValid && notIgnored
@@ -2516,27 +2517,39 @@ new (class JungleFarmScript {
 		return Math.abs(pos.x - pos.y) < 1200 && Math.abs(pos.x) < 6000 && Math.abs(pos.y) < 6000
 	}
 
-	private IsOnSelectedLane(pos: Vector3, hero: Unit): boolean {
-		const priority = this.lanePriority.SelectedID
-		const isRadiant = hero.Team === Team.Radiant
+	private GetTargetLane(hero: Unit, state?: UnitState): 1 | 2 {
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		const isAtBase = fountain && hero.Distance2D(fountain) < 5500
 
-		let targetLane = 0 // 1 = Top, 2 = Bot
-		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
-			targetLane = hero.Position.y > hero.Position.x ? 1 : 2
-		} else if (priority === 4) { // Легкая линия
-			targetLane = isRadiant ? 2 : 1
-		} else if (priority === 5) { // Сложная линия
-			targetLane = isRadiant ? 1 : 2
-		} else if (priority === 1 || priority === 2) {
-			targetLane = priority
+		if (state && state.assignedLane && !isAtBase) {
+			return state.assignedLane
 		}
 
-		if (this.ignoreMid.value && this.IsMidLane(pos)) return false
+		let lane: 1 | 2
+		if (hero.Position.y > hero.Position.x + 800) {
+			lane = 1
+		} else if (hero.Position.x > hero.Position.y + 800) {
+			lane = 2
+		} else {
+			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
+			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
+			lane = topAllies <= botAllies ? 1 : 2
+		}
 
+		if (state) {
+			state.assignedLane = lane
+		}
+		return lane
+	}
+
+	private IsOnSelectedLane(pos: Vector3, hero: Unit, state?: UnitState): boolean {
+		if (this.IsMidLane(pos)) return false
+
+		const targetLane = this.GetTargetLane(hero, state)
 		if (targetLane === 1) return pos.y > pos.x + 800 // Top/Left side
 		if (targetLane === 2) return pos.x > pos.y + 800 // Bot/Right side
 
-		return !this.IsMidLane(pos)
+		return false
 	}
 
 	private IsInTowerRange(pos: Vector3, hero: Unit, additionalRadius = 0): boolean {
@@ -2557,30 +2570,18 @@ new (class JungleFarmScript {
 		return tower !== undefined
 	}
 
-	private GetFurthestAlliedTower(hero: Unit): Tower | undefined {
+	private GetFurthestAlliedTower(hero: Unit, state?: UnitState): Tower | undefined {
 		const alliedTowers = this.cachedTowers.filter(t => t.IsAlive && !t.IsEnemy(hero))
 		if (alliedTowers.length === 0) return undefined
 
-		let priority = this.lanePriority.SelectedID
-
-		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
-			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
-			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
-			priority = topAllies <= botAllies ? 1 : 2
-		}
-
-		if (priority === 4) { // Легкая линия
-			priority = hero.Team === Team.Radiant ? 2 : 1 // Radiant: Низ, Dire: Верх
-		} else if (priority === 5) { // Сложная линия
-			priority = hero.Team === Team.Radiant ? 1 : 2 // Radiant: Верх, Dire: Низ
-		}
+		const targetLane = this.GetTargetLane(hero, state)
 
 		const isTop = (t: Tower) => t.Position.y > t.Position.x
 		const isBot = (t: Tower) => t.Position.y < t.Position.x
 
 		const laneTowers = alliedTowers.filter(t => {
-			if (priority === 1) return isTop(t) && !this.IsMidLane(t.Position)
-			if (priority === 2) return isBot(t) && !this.IsMidLane(t.Position)
+			if (targetLane === 1) return isTop(t) && !this.IsMidLane(t.Position)
+			if (targetLane === 2) return isBot(t) && !this.IsMidLane(t.Position)
 			return true
 		})
 
@@ -2627,23 +2628,11 @@ new (class JungleFarmScript {
 		}
 	}
 
-	private GetDefaultLanePos(hero: Unit): Vector3 {
+	private GetDefaultLanePos(hero: Unit, state?: UnitState): Vector3 {
 		const isRadiant = hero.Team === Team.Radiant
-		let priority = this.lanePriority.SelectedID
+		const targetLane = this.GetTargetLane(hero, state)
 
-		if (priority === 0 || priority === 3) { // Авто или Меньше союзников
-			const topAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y > h.Position.x && !this.IsMidLane(h.Position)).length
-			const botAllies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && h.Position.y < h.Position.x && !this.IsMidLane(h.Position)).length
-			priority = topAllies <= botAllies ? 1 : 2
-		}
-
-		if (priority === 4) { // Легкая линия
-			priority = isRadiant ? 2 : 1
-		} else if (priority === 5) { // Сложная линия
-			priority = isRadiant ? 1 : 2
-		}
-
-		if (priority === 1) { // Верх
+		if (targetLane === 1) { // Верх
 			return isRadiant ? new Vector3(-6800, 1500, 256) : new Vector3(1500, 6800, 256)
 		} else { // Низ
 			return isRadiant ? new Vector3(1500, -6800, 256) : new Vector3(6800, 1500, 256)
