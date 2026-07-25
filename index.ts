@@ -325,7 +325,7 @@ new (class JungleFarmScript {
 	private readonly autoDisconnect = this.debugNode.AddToggle("Авто-дисконнект в конце", true, "Автоматически выходить в главное меню по завершению игры")
 	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "ТП к союзным крипам/башне у фарм-точки при застревании на ХГ или в лесу")
 	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", false, "Выводить подробную отладочную информацию в лог")
-	private readonly forOnik = this.debugNode.AddToggle("Для оника", false, "Полностью отключает работу скрипта, отображение и уведомления")
+	private readonly forOnik = this.debugNode.AddToggle("Для оника", false, "Если ты не оник, НЕ НАЖИМАТЬ")
 
 	private readonly autoEnable = { value: true }
 	private readonly returnAfterHeal = { value: true }
