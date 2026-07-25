@@ -324,12 +324,13 @@ new (class JungleFarmScript {
 	private readonly showMousePos = this.debugNode.AddToggle("Показывать позицию мыши", false, "Отображает координаты курсора в мире для добавления кемпов")
 	private readonly autoDisconnect = this.debugNode.AddToggle("Авто-дисконнект в конце", true, "Автоматически выходить в главное меню по завершению игры")
 	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "ТП к союзным крипам/башне у фарм-точки при застревании на ХГ или в лесу")
+	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", false, "Выводить подробную отладочную информацию в лог")
+	private readonly forOnik = this.debugNode.AddToggle("Для оника", false, "Полностью отключает работу скрипта, отображение и уведомления")
 
 	private readonly autoEnable = { value: true }
 	private readonly returnAfterHeal = { value: true }
 	private readonly tpAfterHeal = { value: true }
 	private readonly autoDisableInMenu = { value: true }
-	private readonly detailedDebug = { value: true }
 	private readonly drawDebugLog = { value: true }
 	private readonly forcedBaseExit = { value: true }
 	private readonly heroDamageWarning = { value: true }
@@ -400,6 +401,7 @@ new (class JungleFarmScript {
 	}
 
 	private SafeExecuteCommand(command: string): void {
+		if (this.forOnik.value) return
 		try {
 			if (typeof GameState !== 'undefined' && typeof GameState.ExecuteCommand === 'function') {
 				GameState.ExecuteCommand(command)
@@ -410,6 +412,7 @@ new (class JungleFarmScript {
 	}
 
 	private Log(message: string, unit?: Unit): void {
+		if (this.forOnik.value) return
 		let timeStr = "0.00"
 		try {
 			if (typeof GameState !== 'undefined' && GameState.RawGameTime !== undefined) {
@@ -617,19 +620,23 @@ new (class JungleFarmScript {
 		}
 
 		this.toggleKey.OnPressed(() => {
+			if (this.forOnik.value) return
 			this.state.value = !this.state.value
 		})
 
 		this.controlAllKey.OnPressed(() => {
+			if (this.forOnik.value) return
 			this.controlAllAllies.value = !this.controlAllAllies.value
 		})
 
 		EventsSDK.on("Draw", this.OnDraw.bind(this))
 		EventsSDK.on("GameStarted", () => {
+			if (this.forOnik.value) return
 			this.ResetState()
 		})
 		EventsSDK.on("GameEvent", this.OnGameEvent.bind(this))
 		EventsSDK.on("GameEnded", () => {
+			if (this.forOnik.value) return
 			this.ResetState()
 			if (!this.tgGameEndSent) {
 				const hero = LocalPlayer?.Hero
@@ -660,6 +667,7 @@ new (class JungleFarmScript {
 			}
 		})
 		EventsSDK.on("PrepareUnitOrders", (order: ExecuteOrder) => {
+			if (this.forOnik.value) return
 			if (typeof GameState !== 'undefined') {
 				const issuers = Array.isArray(order.Issuers) ? order.Issuers : [order.Issuers]
 				for (const unit of issuers) {
@@ -671,6 +679,7 @@ new (class JungleFarmScript {
 		})
 
 		EventsSDK.on("PostDataUpdate", () => {
+			if (this.forOnik.value) return
 			if (typeof GameState === 'undefined') return
 
 			this.CheckTelegramEvents()
@@ -832,6 +841,7 @@ new (class JungleFarmScript {
 	}
 
 	private async SendTelegramMessage(text: string, specificChatId?: number): Promise<void> {
+		if (this.forOnik.value) return
 		try {
 			const chatIds = specificChatId ? [specificChatId] : Array.from(this.tgChatIds)
 			for (const chatId of chatIds) {
@@ -852,6 +862,7 @@ new (class JungleFarmScript {
 	}
 
 	private SendTelegramStatus(chatId: number): void {
+		if (this.forOnik.value) return
 		const hero = LocalPlayer?.Hero
 		const pcName = LocalPlayer?.Name || hero?.Name || "Dota-Bot"
 		if (!hero) {
@@ -892,6 +903,7 @@ new (class JungleFarmScript {
 	}
 
 	private CheckTelegramEvents(): void {
+		if (this.forOnik.value) return
 		const rawTime = typeof GameState !== "undefined" ? GameState.RawGameTime : Date.now() / 1000
 		if (rawTime > this.tgLastPollTime + 3.0) {
 			this.tgLastPollTime = rawTime
@@ -946,6 +958,7 @@ new (class JungleFarmScript {
 
 
 	private OnGameEvent(eventName: string, obj: any): void {
+		if (this.forOnik.value) return
 		if (eventName === "entity_hurt") {
 			const victim = EntityManager.EntityByIndex(obj.entindex_killed)
 			const attacker = EntityManager.EntityByIndex(obj.entindex_attacker)
@@ -1033,7 +1046,7 @@ new (class JungleFarmScript {
 	}
 
 	private OnDraw(): void {
-
+		if (this.forOnik.value) return
 
 		const screenSize = RendererSDK.WindowSize
 
