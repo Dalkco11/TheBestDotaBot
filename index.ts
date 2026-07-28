@@ -1648,7 +1648,7 @@ new (class JungleFarmScript {
 				if (target) {
 					if (target instanceof Vector3) {
 						hero.MoveTo(this.GetRandomizedPosition(target, 50), false, true)
-					} else {
+					} else if (!this.IsInTowerRange(target.Position, hero)) {
 						hero.AttackTarget(target, false, true)
 					}
 					state.lastOrderTime = rawTime
@@ -2353,20 +2353,8 @@ new (class JungleFarmScript {
 
 			state.nextOrderDelay = 0.1 + Math.random() * 0.7 // Рандом от 0.1 до 0.8 для следующего клика
 
-			const inTowerRange = this.IsInTowerRange(hero.Position, hero)
-			// Игнорируем "краешек" радиуса (первые 70 единиц), чтобы не дергаться
-			const isDeepInTowerRange = inTowerRange && this.IsInTowerRange(hero.Position, hero, -70)
-			const isBypassing = rawTime < state.lastDamageTime + 10.0 // Custom logic to avoid loops
-
-			if (this.avoidTowers.value && (isDeepInTowerRange || state.isEscapingTower) && !isBypassing) {
-				const safetyBuffer = state.isEscapingTower ? 300 : 0
-				if (this.IsInTowerRange(hero.Position, hero, safetyBuffer)) {
-					state.isEscapingTower = true
-					this.Flee(hero, state, "Побег от башни")
-					return true
-				}
-				state.isEscapingTower = false
-			}
+			// Разрешаем пробегать под башней к своей цели, не запуская принудительный Flee
+			state.isEscapingTower = false
 
 			// Логика стакания лагерей в X:53
 			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
@@ -2778,15 +2766,13 @@ new (class JungleFarmScript {
 				state.targetPos = undefined
 
 				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
-				if (this.forcedBaseExit.value && distToFountain < 6000 && hero.Level < this.laneOnlyUntilLevel.value && !state.isReturningAfterHeal) {
-					const furthestTower = this.GetFurthestAlliedTower(hero, state)
-					if (furthestTower) {
-						this.setStatus(state, "Принудительный выход", hero)
-						const movePos = this.GetSafeMovePos(hero.Position, furthestTower.Position, hero, state)
-						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
-						state.lastOrderTime = GameState.RawGameTime
-						return true
-					}
+				if (distToFountain < 6000 && !state.isReturningAfterHeal) {
+					const targetPos = this.GetDefaultLanePos(hero, state)
+					this.setStatus(state, "Выход на линию", hero)
+					const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
+					hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
+					state.lastOrderTime = GameState.RawGameTime
+					return true
 				}
 
 				return false
@@ -3174,39 +3160,6 @@ new (class JungleFarmScript {
 	}
 
 	private GetSafeMovePos(start: Vector3, end: Vector3, hero: Unit, state: UnitState): Vector3 {
-		if (!this.avoidTowers.value) return end
-
-		const dir = end.Subtract(start).Normalize()
-		const dist = start.Distance2D(end)
-
-		for (let d = 100; d < dist; d += 150) {
-			const checkPos = start.Add(dir.MultiplyScalar(d))
-			if (this.IsInTowerRange(checkPos, hero)) {
-				// Пытаемся найти путь в обход, проверяя разные углы
-				for (let angle = 30; angle <= 120; angle += 30) {
-					const rad = angle * Math.PI / 180
-					const escapeDir1 = dir.Rotated(rad)
-					const escapeDir2 = dir.Rotated(-rad)
-
-					const escapePos1 = checkPos.Add(escapeDir1.MultiplyScalar(1000))
-					const escapePos2 = checkPos.Add(escapeDir2.MultiplyScalar(1000))
-
-					if (!this.IsInTowerRange(escapePos1, hero)) {
-						state.lastBypassTime = GameState.RawGameTime
-						return escapePos1
-					}
-					if (!this.IsInTowerRange(escapePos2, hero)) {
-						state.lastBypassTime = GameState.RawGameTime
-						return escapePos2
-					}
-				}
-
-				// Если обход не найден, возвращаемся назад от башни
-				state.lastBypassTime = GameState.RawGameTime
-				return start.Subtract(dir.MultiplyScalar(300))
-			}
-		}
-
 		return end
 	}
 })()
