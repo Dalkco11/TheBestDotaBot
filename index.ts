@@ -684,6 +684,19 @@ new (class JungleFarmScript {
 
 			this.CheckTelegramEvents()
 
+			if (GameState.RawGameTime < 0.5) {
+				const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
+					u.IsHero && u.IsAlive && u.IsControllable
+				)
+				for (const hero of controllableHeroes) {
+					const unitState = this.LoadUnitState(hero)
+					if (this.autoWard.value) {
+						this.HandleAutoWarding(hero, unitState)
+					}
+				}
+				return
+			}
+
 			if (!this.hasSentInitialSpawnMove) {
 				const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
 					u.IsHero && u.IsAlive && u.IsControllable
@@ -700,29 +713,79 @@ new (class JungleFarmScript {
 				}
 			}
 
-			// Авто-покупка предметов и вызов курьера работают даже если скрипт выключен
-			const rawTime = GameState.RawGameTime
-			const controllableHeroes = EntityManager.GetEntitiesByClass(Unit).filter(u =>
-				u.IsHero && u.IsAlive && u.IsControllable
-			)
+			const playerID = LocalPlayer?.PlayerID
+			if (playerID === undefined) return
 
-			for (const hero of controllableHeroes) {
-				const state = this.LoadUnitState(hero)
-				if (this.autoBuyItems.value && rawTime > state.lastBuyTime + 2.0) {
-					this.HandleAutoBuyItems(hero, state)
-					state.lastBuyTime = rawTime
-				}
-				if (this.autoCourier.value && rawTime > state.lastCourierTime + 5.0) {
-					this.HandleCourier(hero, state)
-					state.lastCourierTime = rawTime
+			const rawTime = GameState.RawGameTime
+			const unitsToControl: Unit[] = []
+
+			// Добавляем юнитов под нашим управлением (герой, иллюзии)
+			const myUnits = EntityManager.GetEntitiesByClass(Unit).filter(u =>
+				u.IsAlive && u.IsControllableByPlayerMask !== 0n && (u.IsControllableByPlayerMask & (1n << BigInt(playerID))) !== 0n
+			)
+			unitsToControl.push(...myUnits)
+
+			// Очистка юнитов, которые больше не должны контролироваться
+			const currentIndices = new Set(unitsToControl.map(u => u.Index))
+			for (const [index, _] of this.unitStates) {
+				if (!currentIndices.has(index)) {
+					const unit = EntityManager.EntityByIndex(index) as Unit
+					if (unit && unit.IsAlive) {
+						unit.OrderStop(false, true)
+					}
+					this.unitStates.delete(index)
 				}
 			}
 
-			if (!this.state.value) return
+			for (const u of unitsToControl) {
+				if (!u.IsHero && !u.IsIllusion) continue
+				if (u.IsIllusion && !this.useIllusions.value) continue
 
-			for (const hero of controllableHeroes) {
-				const state = this.LoadUnitState(hero)
-				this.OnUpdate(hero, state)
+				// Инициализация настроек прокачки для всех управляемых героев
+				if (u.IsHero && !u.IsIllusion) {
+					const hKey = `${u.Name}_${u.Index}`
+					if (!this.heroSettings.has(hKey)) {
+						const heroNode = this.autoLevelingNode.AddNode(`${u.Name} [${u.Index}]`, "", "Настройки для этого героя")
+						const settings: HeroLevelingSettings = {
+							node: heroNode,
+							autoLevel: heroNode.AddToggle("Авто-прокачка", true),
+							prioritizeUlt: heroNode.AddToggle("Всегда первым качать ульту", true),
+							p1: heroNode.AddDropdown("Приоритет 1", ["Q", "W", "E", "R"], 0),
+							p2: heroNode.AddDropdown("Приоритет 2", ["Q", "W", "E", "R"], 1),
+							p3: heroNode.AddDropdown("Приоритет 3", ["Q", "W", "E", "R"], 2),
+							p4: heroNode.AddDropdown("Приоритет 4", ["Q", "W", "E", "R"], 3)
+						}
+						this.heroSettings.set(hKey, settings)
+					}
+				}
+
+				const unitState = this.LoadUnitState(u)
+
+				// Авто-покупка предметов, курьер и прокачка
+				if (u.IsHero && !u.IsIllusion) {
+					if (this.autoBuyItems.value && rawTime > unitState.lastBuyTime + 2.0) {
+						this.HandleAutoBuyItems(u, unitState)
+						unitState.lastBuyTime = rawTime
+					}
+					if (this.autoCourier.value && rawTime > unitState.lastCourierTime + 5.0) {
+						this.HandleCourier(u, unitState)
+						unitState.lastCourierTime = rawTime
+					}
+					if (this.autoLeveling.value) {
+						this.HandleAutoLeveling(u, unitState)
+					}
+				}
+
+				if (!this.state.value) {
+					this.SaveUnitState(u, unitState)
+					continue
+				}
+
+				const abilitySent = this.AutoAbilities(u, unitState)
+				const itemSent = this.AutoItems(u, unitState)
+
+				this.OnUpdate(u, unitState, abilitySent || itemSent)
+				this.SaveUnitState(u, unitState)
 			}
 		})
 	}
@@ -1196,87 +1259,6 @@ new (class JungleFarmScript {
 				RendererSDK.Text(text, drawPos, new Color(0, 255, 0), "Roboto", fontSize, 800)
 			}
 
-			if (!this.state.value) {
-				// Если скрипт выключен и контроль был активен — просто перестаем слать новые команды.
-				// Состояние unitStates не очищаем, чтобы не сбрасывать APM и настройки.
-				return
-			}
-
-			// Skip logic if game hasn't truly started
-			if (GameState.RawGameTime < 0.5) {
-				const unitState = this.LoadUnitState(hero)
-				if (this.autoWard.value) {
-					this.HandleAutoWarding(hero, unitState)
-				}
-				return
-			}
-
-			// Run logic on Draw frame but throttle it
-			const throttle = 0.1
-			if (GameState.RawGameTime > this.lastLogicTime + throttle) {
-				const playerID = LocalPlayer?.PlayerID
-				if (playerID !== undefined) {
-					const unitsToControl: Unit[] = []
-
-					// Добавляем юнитов под нашим управлением (герой, иллюзии)
-					const myUnits = EntityManager.GetEntitiesByClass(Unit).filter(u =>
-						u.IsAlive && u.IsControllableByPlayerMask !== 0n && (u.IsControllableByPlayerMask & (1n << BigInt(playerID))) !== 0n
-					)
-					unitsToControl.push(...myUnits)
-
-					// Очистка юнитов, которые больше не должны контролироваться
-					const currentIndices = new Set(unitsToControl.map(u => u.Index))
-					for (const [index, _] of this.unitStates) {
-						if (!currentIndices.has(index)) {
-							const unit = EntityManager.EntityByIndex(index) as Unit
-							if (unit && unit.IsAlive) {
-								unit.OrderStop(false, true)
-							}
-							this.unitStates.delete(index)
-						}
-					}
-
-					for (const u of unitsToControl) {
-						if (!u.IsHero && !u.IsIllusion) continue
-						if (u.IsIllusion && !this.useIllusions.value) continue
-
-						// Инициализация настроек прокачки для всех управляемых героев
-						if (u.IsHero && !u.IsIllusion) {
-							const hKey = `${u.Name}_${u.Index}`
-							if (!this.heroSettings.has(hKey)) {
-								const heroNode = this.autoLevelingNode.AddNode(`${u.Name} [${u.Index}]`, "", "Настройки для этого героя")
-								const settings: HeroLevelingSettings = {
-									node: heroNode,
-									autoLevel: heroNode.AddToggle("Авто-прокачка", true),
-									prioritizeUlt: heroNode.AddToggle("Всегда первым качать ульту", true),
-									p1: heroNode.AddDropdown("Приоритет 1", ["Q", "W", "E", "R"], 0),
-									p2: heroNode.AddDropdown("Приоритет 2", ["Q", "W", "E", "R"], 1),
-									p3: heroNode.AddDropdown("Приоритет 3", ["Q", "W", "E", "R"], 2),
-									p4: heroNode.AddDropdown("Приоритет 4", ["Q", "W", "E", "R"], 3)
-								}
-								this.heroSettings.set(hKey, settings)
-							}
-						}
-
-						const unitState = this.LoadUnitState(u)
-
-						if (u.IsHero && !u.IsIllusion && this.autoLeveling.value) {
-							this.HandleAutoLeveling(u, unitState)
-						}
-
-						const abilitySent = this.AutoAbilities(u, unitState)
-						const itemSent = this.AutoItems(u, unitState)
-
-						this.OnUpdate(u, unitState, abilitySent || itemSent)
-						this.SaveUnitState(u, unitState)
-					}
-				}
-
-				this.lastLogicTime = GameState.RawGameTime
-			}
-
-
-
 			// Visuals
 			if (this.drawSpots.value) {
 				for (const spot of jungleSpots) {
@@ -1441,6 +1423,28 @@ new (class JungleFarmScript {
 		try {
 			if (typeof GameState === 'undefined') return
 
+			if (!hero.IsAlive) {
+				state.isGoingToFountain = false
+				state.isReturningAfterHeal = false
+				state.currentLotusSpot = null
+				state.currentWisdomSpot = null
+				state.lotusArrivalTime = 0
+				state.wisdomArrivalTime = 0
+				state.targetPos = undefined
+				return
+			}
+
+			// Блокируем любые новые приказы во время ченнелинга (ТП, каст скиллов)
+			if (hero.IsChanneling) {
+				state.nextOrderDelay = 0.3
+				return
+			}
+
+			if (hero.IsStunned || hero.IsHexed || hero.IsNightmared) {
+				state.nextOrderDelay = 0.3
+				return
+			}
+
 			const rawTime = GameState.RawGameTime
 			state.actionTimestamps = state.actionTimestamps.filter(t => rawTime - t <= 60)
 
@@ -1450,8 +1454,10 @@ new (class JungleFarmScript {
 			this.cachedRunes = this.pickAllRunes.value ? this.SafeGetEntities<Rune>(Rune) : []
 			this.cachedHeroes = this.SafeGetEntities<Unit>(Unit).filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
 
+			// Если только что использован скилл или предмет, даем время на завершение анимации каста
 			if (justActed) {
-				state.nextOrderDelay = 0.05 + Math.random() * 0.1
+				state.nextOrderDelay = 0.35
+				state.lastOrderTime = rawTime
 				return
 			}
 			
@@ -1475,19 +1481,17 @@ new (class JungleFarmScript {
 			
 			if (rawTime < state.lastOrderTime + state.nextOrderDelay) return
 
-			// Динамический расчет задержки для поддержания АПМ (теперь индивидуально)
+			// Динамический расчет задержки для поддержания АПМ
 			if (this.maintainAPM.value) {
 				const currentAPM = state.actionTimestamps.length
 				let min = this.minAPMStr.value
 				let max = this.maxAPMStr.value
 
 				if (this.dynamicAPM.value) {
-					// Если мы просто стоим или идем к линии — понижаем АПМ
 					if (state.currentStatus.includes("Ожидание") || state.currentStatus.includes("Путь в лес")) {
 						min = Math.max(10, min - 60)
 						max = Math.max(60, max - 60)
 					}
-					// Если в бою или у башни — повышаем
 					if (hero.IsAttacking || state.currentStatus.includes("Побег")) {
 						min += 30
 						max += 30
@@ -1551,13 +1555,15 @@ new (class JungleFarmScript {
 				state.isReturningAfterHeal = false
 
 				if (this.autoTpLowHp.value && rawTime > state.lastTpTime + 10) {
-					const tp = hero.GetItemByName("item_tpscroll")
+					const tp = hero.GetItemByName("item_tpscroll") ?? (hero.Inventory ? (hero.Inventory.GetItem(15) ?? hero.Inventory.Items.find(i => i?.Name === "item_tpscroll")) : null)
 					if (tp && tp.IsReady) {
 						const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 						if (fountain) {
 							hero.CastPosition(tp, fountain.Position, false, true)
 							state.lastTpTime = rawTime
-							state.lastOrderTime = rawTime
+							state.lastOrderTime = rawTime + 0.5
+							state.nextOrderDelay = 3.5
+							this.setStatus(state, "Телепортация на базу", hero)
 							this.Log("Использую ТП на базу (Low HP)", hero)
 							return
 						}
@@ -1575,6 +1581,11 @@ new (class JungleFarmScript {
 					this.Log(`Здоровье восстановлено, ${reason}, возврат на линию пропущен`, hero)
 				}
 				state.isGoingToFountain = false
+			}
+
+			// Если только что нажали ТП на базу, не сбиваем его шагом
+			if (rawTime < state.lastTpTime + 3.2 && hero.IsChanneling) {
+				return
 			}
 
 			if (state.isGoingToFountain) {
@@ -1598,7 +1609,7 @@ new (class JungleFarmScript {
 
 			if (this.fleeFromCreepsUnderTower.value && rawTime < state.lastDamageTime + 3.0) {
 				const target = hero.Target
-				const isSafeToHit = target instanceof Creep && target.HP < hero.AttackDamageMax * 2 // Можем убить за 1-2 удара
+				const isSafeToHit = target instanceof Creep && target.HP < hero.AttackDamageMax * 2
 
 				if (!target || !target.IsAlive || (this.IsInTowerRange(target.Position, hero) && !isSafeToHit)) {
 					this.Flee(hero, state, "Отход (Урон под башней)")
@@ -1608,7 +1619,6 @@ new (class JungleFarmScript {
 
 			// Логика предотвращения урона от крипов на стадии лайнинга
 			if (hero.Level < this.laneOnlyUntilLevel.value) {
-				// Очистка старой истории урона
 				state.damageHistory = state.damageHistory.filter((d: { time: number, amount: number }) => rawTime - d.time <= 5.0)
 				const totalRecentDamage = state.damageHistory.reduce((sum: number, d: { time: number, amount: number }) => sum + d.amount, 0)
 				const damageThreshold = hero.MaxHP * 0.1
@@ -1617,13 +1627,11 @@ new (class JungleFarmScript {
 					const targetingMe = this.cachedCreeps.find(c =>
 						c.IsEnemy(hero) && c.IsAlive && c.IsVisible && hero.Distance2D(c) < 600 && c.TargetIndex_ === hero.Index
 					)
-					// Если мы под башней или рядом (+200), не кайтим (стоим и терпим/фармим)
 					const inAllyTowerRange = this.cachedTowers.some(t => !t.IsEnemy(hero) && t.IsAlive && hero.Distance2D(t) < 850 + 200)
 
 					if (targetingMe && !inAllyTowerRange) {
 						this.Flee(hero, state, "Кайтинг крипов (Laning)")
 						state.lastOrderTime = rawTime
-						// После отхода сбрасываем историю чтобы не кайтить по кругу
 						state.damageHistory = []
 						return
 					}
@@ -1643,19 +1651,15 @@ new (class JungleFarmScript {
 			}
 
 			// Если основная логика не отправила приказ, но АПМ слишком низкий - шлем "филлер"
-			if (!mainOrderSent && this.maintainAPM.value && state.actionTimestamps.length < this.minAPMStr.value) {
+			// Не сбиваем текущую атаку, ченнелинг или движение
+			if (!mainOrderSent && this.maintainAPM.value && state.actionTimestamps.length < this.minAPMStr.value && !hero.IsAttacking && !hero.IsChanneling) {
 				const target = hero.Target ?? state.targetPos
 				if (target) {
 					if (target instanceof Vector3) {
-						hero.MoveTo(this.GetRandomizedPosition(target, 50), false, true)
-					} else if (!this.IsInTowerRange(target.Position, hero)) {
+						hero.MoveTo(this.GetRandomizedPosition(target, 40), false, true)
+					} else if (target instanceof Unit && !this.IsInTowerRange(target.Position, hero)) {
 						hero.AttackTarget(target, false, true)
 					}
-					state.lastOrderTime = rawTime
-					mainOrderSent = true
-				} else if (hero.IsMoving) {
-					// Если просто идем - освежаем клик по вектору движения
-					hero.MoveTo(this.GetRandomizedPosition(hero.Position.Add(hero.Forward.MultiplyScalar(300)), 50), false, true)
 					state.lastOrderTime = rawTime
 					mainOrderSent = true
 				}
@@ -2318,10 +2322,14 @@ new (class JungleFarmScript {
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 		if (fountain) {
 			state.targetPos = fountain.Position
-			if (hero.Distance2D(fountain) > 200) {
-				const movePos = this.GetSafeMovePos(hero.Position, fountain.Position, hero, state)
-				hero.MoveTo(this.GetRandomizedPosition(movePos, 600), false, true)
-				state.lastOrderTime = GameState.RawGameTime
+			const dist = hero.Distance2D(fountain)
+			if (dist > 300) {
+				const rawTime = GameState.RawGameTime
+				if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+					const movePos = this.GetSafeMovePos(hero.Position, fountain.Position, hero, state)
+					hero.MoveTo(this.GetRandomizedPosition(movePos, 50), false, true)
+					state.lastOrderTime = rawTime
+				}
 			}
 		}
 	}
@@ -2377,10 +2385,11 @@ new (class JungleFarmScript {
 
 						if (dist > 250) {
 							this.setStatus(state, `Сбор лотоса: ${state.currentLotusSpot.name}`, hero)
-							hero.MoveTo(state.currentLotusSpot.pos, false, true)
-							state.lastOrderTime = rawTime
-							// Сбрасываем время прибытия только если мы действительно далеко
-							if (dist > 500) state.lotusArrivalTime = 0
+							state.lotusArrivalTime = 0
+							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+								hero.MoveTo(state.currentLotusSpot.pos, false, true)
+								state.lastOrderTime = rawTime
+							}
 							return true
 						} else {
 							if (state.lotusArrivalTime === 0) {
@@ -2388,7 +2397,7 @@ new (class JungleFarmScript {
 							}
 
 							if (rawTime < state.lotusArrivalTime + 3.1) {
-								this.setStatus(state, `Ожидание лотоса (3 сек): ${Math.ceil(3.1 - (rawTime - state.lotusArrivalTime))}с`, hero)
+								this.setStatus(state, `Ожидание лотоса (3 сек): ${Math.max(0, Math.ceil(3.1 - (rawTime - state.lotusArrivalTime)))}с`, hero)
 								return true
 							} else {
 								this.Log(`Лотос собран в цикле ${cycle}`, hero)
@@ -2407,6 +2416,9 @@ new (class JungleFarmScript {
 							state.currentFarmMode = "lotus"
 							state.lastModeSwitchTime = rawTime
 							state.lotusArrivalTime = 0
+							this.setStatus(state, `Сбор лотоса: ${spot.name}`, hero)
+							hero.MoveTo(spot.pos, false, true)
+							state.lastOrderTime = rawTime
 							return true
 						}
 					}
@@ -2429,9 +2441,11 @@ new (class JungleFarmScript {
 
 						if (dist > 250) {
 							this.setStatus(state, `Сбор опыта: ${state.currentWisdomSpot.name}`, hero)
-							hero.MoveTo(state.currentWisdomSpot.pos, false, true)
-							state.lastOrderTime = rawTime
-							if (dist > 500) state.wisdomArrivalTime = 0
+							state.wisdomArrivalTime = 0
+							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+								hero.MoveTo(state.currentWisdomSpot.pos, false, true)
+								state.lastOrderTime = rawTime
+							}
 							return true
 						} else {
 							if (state.wisdomArrivalTime === 0) {
@@ -2458,6 +2472,9 @@ new (class JungleFarmScript {
 							state.currentFarmMode = "wisdom"
 							state.lastModeSwitchTime = rawTime
 							state.wisdomArrivalTime = 0
+							this.setStatus(state, `Сбор опыта: ${spot.name}`, hero)
+							hero.MoveTo(spot.pos, false, true)
+							state.lastOrderTime = rawTime
 							return true
 						}
 					}
@@ -2539,19 +2556,24 @@ new (class JungleFarmScript {
 					}
 					this.setStatus(state, "Фарм линии", hero)
 
-					// Рандомизация цели только для атаки
-					targetCreep = this.GetRandomTargetInRadius(targetCreep, 100, hero)
-					state.targetPos = targetCreep.Position
+					// Не переключаем цель случайным образом каждый кадр, если текущая цель жива и рядом
+					const currentTarget = hero.Target
+					let finalTarget: Creep = targetCreep
+					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.IsVisible && currentTarget.IsEnemy(hero) && !this.IsInTowerRange(currentTarget.Position, hero) && hero.Distance2D(currentTarget) < 900) {
+						finalTarget = currentTarget
+					}
 
-					const isAttackingSame = hero.TargetIndex_ === targetCreep.Index
+					state.targetPos = finalTarget.Position
+
+					const isAttackingSame = hero.TargetIndex_ === finalTarget.Index && hero.IsAttacking
 
 					if (!isAttackingSame) {
-						let targetPos = targetCreep.Position
-						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
-						if (movePos.Distance2D(targetCreep.Position) > 100) {
-							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
+						const dist = hero.Distance2D(finalTarget)
+						const attackRange = hero.GetAttackRange(finalTarget) + 50
+						if (dist > attackRange) {
+							hero.MoveTo(finalTarget.Position, false, true)
 						} else {
-							hero.AttackTarget(targetCreep, false, true)
+							hero.AttackTarget(finalTarget, false, true)
 						}
 						state.lastOrderTime = GameState.RawGameTime
 						return true
@@ -2649,16 +2671,21 @@ new (class JungleFarmScript {
 
 				if (neutralsInSpot.length > 0) {
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
-					const neutral = this.GetRandomTargetInRadius(closestNeutral, 100, hero)
+					const currentTarget = hero.Target
+					let neutral: Creep = closestNeutral
+					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.IsVisible && currentTarget.IsNeutral && currentTarget.Distance2D(nearestSpot.pos) < 750) {
+						neutral = currentTarget
+					}
 
 					this.setStatus(state, "Фарм леса", hero)
 					state.targetPos = neutral.Position
 
-					const isAttackingSame = hero.TargetIndex_ === neutral.Index
+					const isAttackingSame = hero.TargetIndex_ === neutral.Index && hero.IsAttacking
 					if (!isAttackingSame && neutral.IsAlive && neutral.IsVisible) {
-						const movePos = this.GetSafeMovePos(hero.Position, neutral.Position, hero, state)
-						if (movePos.Distance2D(neutral.Position) > 100) {
-							hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
+						const dist = hero.Distance2D(neutral)
+						const attackRange = hero.GetAttackRange(neutral) + 50
+						if (dist > attackRange) {
+							hero.MoveTo(neutral.Position, false, true)
 						} else {
 							hero.AttackTarget(neutral, false, true)
 						}
@@ -2769,9 +2796,12 @@ new (class JungleFarmScript {
 				if (distToFountain < 6000 && !state.isReturningAfterHeal) {
 					const targetPos = this.GetDefaultLanePos(hero, state)
 					this.setStatus(state, "Выход на линию", hero)
-					const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
-					hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
-					state.lastOrderTime = GameState.RawGameTime
+					state.targetPos = targetPos
+					if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
+						hero.MoveTo(movePos, false, true)
+						state.lastOrderTime = GameState.RawGameTime
+					}
 					return true
 				}
 
@@ -2821,7 +2851,8 @@ new (class JungleFarmScript {
 			this.Log(`ТП после хила: телепортация к ${targetName}`, hero)
 			hero.CastTarget(tpScroll, tpTarget, false, true)
 			state.lastTpTime = rawTime
-			state.lastOrderTime = rawTime
+			state.lastOrderTime = rawTime + 0.5
+			state.nextOrderDelay = 3.5
 			return true
 		}
 
@@ -2862,7 +2893,8 @@ new (class JungleFarmScript {
 			this.Log(`Авто-ТП при застревании: телепортация к ${targetName}`, hero)
 			hero.CastTarget(tpScroll, tpTarget, false, true)
 			state.lastTpTime = rawTime
-			state.lastOrderTime = rawTime
+			state.lastOrderTime = rawTime + 0.5
+			state.nextOrderDelay = 3.5
 			return true
 		}
 
@@ -2871,7 +2903,8 @@ new (class JungleFarmScript {
 		if (fountain) {
 			hero.CastPosition(tpScroll, fountain.Position, false, true)
 			state.lastTpTime = rawTime
-			state.lastOrderTime = rawTime
+			state.lastOrderTime = rawTime + 0.5
+			state.nextOrderDelay = 3.5
 			this.Log("Авто-ТП при застревании: телепортация на базу", hero)
 			return true
 		}
