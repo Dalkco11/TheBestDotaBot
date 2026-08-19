@@ -1090,18 +1090,26 @@ new (class JungleFarmScript {
 			}
 
 			// Мгновенная очистка спота при смерти нейтрала (союзник, враг или локальный герой)
-			if (victim instanceof Creep && victim.IsNeutral) {
+			if (victim instanceof Creep && (victim.IsNeutral || victim.Name.includes("neutral"))) {
 				const nearestSpot = jungleSpots.slice().sort((a, b) => victim.Distance2D(a.pos) - victim.Distance2D(b.pos))[0]
-				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 900) {
+				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 1100) {
 					const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).filter(c =>
 						c.Index !== victim.Index &&
 						c.IsAlive &&
-						c.IsNeutral &&
-						c.Distance2D(nearestSpot.pos) < 900
+						c.Health > 0 &&
+						!c.IsDormant &&
+						(c.IsNeutral || c.Name.includes("neutral")) &&
+						c.Distance2D(nearestSpot.pos) < 1100
 					)
 					if (otherNeutrals.length === 0) {
 						this.emptySpots.add(nearestSpot.name)
 						this.Log(`Спот ${nearestSpot.name} зафармлен (убит последний нейтрал)`)
+						for (const [, state] of this.unitStates) {
+							if (state.currentJungleSpotName === nearestSpot.name) {
+								state.currentJungleSpotName = null
+								state.lastSpotArrivalTime = 0
+							}
+						}
 					}
 				}
 			}
@@ -2658,14 +2666,15 @@ new (class JungleFarmScript {
 				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
 						c.IsEnemy(hero) &&
-						c.IsNeutral &&
+						(c.IsNeutral || c.Name.includes("neutral")) &&
 						c.IsAlive &&
+						c.Health > 0 &&
+						!c.IsDormant &&
 						c.IsSpawned &&
 						c.IsVisible &&
 						!c.IsPhantom &&
 						!c.IsInvulnerable &&
-						c.Name.includes("neutral") &&
-						c.Distance2D(nearestSpot.pos) < 750 &&
+						(c.Distance2D(nearestSpot.pos) < 950 || (hero.Distance2D(nearestSpot.pos) < 850 && hero.Distance2D(c) < 850)) &&
 						!this.IsInTowerRange(c.Position, hero)
 				)
 
@@ -2673,7 +2682,7 @@ new (class JungleFarmScript {
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					const currentTarget = hero.Target
 					let neutral: Creep = closestNeutral
-					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.IsVisible && currentTarget.IsNeutral && currentTarget.Distance2D(nearestSpot.pos) < 750) {
+					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.Health > 0 && currentTarget.IsVisible && (currentTarget.IsNeutral || currentTarget.Name.includes("neutral")) && (currentTarget.Distance2D(nearestSpot.pos) < 950 || hero.Distance2D(currentTarget) < 850)) {
 						neutral = currentTarget
 					}
 
@@ -2706,7 +2715,7 @@ new (class JungleFarmScript {
 								return true
 							}
 						}
-						if (dist < 700) {
+						if (dist < 800) {
 							this.Log(`Спот ${nearestSpot.name} помечен пустым (Застревание, dist: ${Math.floor(dist)})`, hero)
 							this.emptySpots.add(nearestSpot.name)
 							state.currentJungleSpotName = null
@@ -2721,7 +2730,24 @@ new (class JungleFarmScript {
 					state.stuckCheckTime = rawTime
 				}
 
-				if (dist > 150) {
+				if (dist <= 550) {
+					// Мы в радиусе видимости спота и крипов нет
+					if (state.lastSpotArrivalTime === 0) {
+						state.lastSpotArrivalTime = rawTime
+					}
+
+					if (dist <= 250 || rawTime >= state.lastSpotArrivalTime + 0.15) {
+						this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
+						this.emptySpots.add(nearestSpot.name)
+						state.currentJungleSpotName = null
+						state.lastOrderTime = 0
+						state.lastSpotArrivalTime = 0
+						return true
+					}
+
+					this.setStatus(state, `Проверка спота: ${nearestSpot.name}`, hero)
+					return true
+				} else {
 					this.setStatus(state, `Путь в лес: ${nearestSpot.name}`, hero)
 					state.lastSpotArrivalTime = 0 // Сбрасываем время прибытия, пока мы в пути
 					const movePos = this.GetSafeMovePos(hero.Position, nearestSpot.pos, hero, state)
@@ -2738,23 +2764,6 @@ new (class JungleFarmScript {
 						}
 					}
 					state.lastOrderTime = GameState.RawGameTime
-					return true
-				} else {
-					// Мы в радиусе спота. Даем 0.4 секунды на "прогрузку" крипов или их возвращение
-					if (state.lastSpotArrivalTime === 0) {
-						state.lastSpotArrivalTime = rawTime
-					}
-
-					if (rawTime < state.lastSpotArrivalTime + 0.4) {
-						this.setStatus(state, `Проверка спота: ${nearestSpot.name}`, hero)
-						return true
-					}
-
-					this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
-					this.emptySpots.add(nearestSpot.name)
-					state.currentJungleSpotName = null
-					state.lastOrderTime = 0
-					state.lastSpotArrivalTime = 0
 					return true
 				}
 			} else {
@@ -3018,14 +3027,14 @@ new (class JungleFarmScript {
 
 	private TrackGlobalJungleStatus(hero: Unit): void {
 		const rawTime = GameState.RawGameTime
-		const allies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && !h.IsIllusion && h.Index !== hero.Index)
-		const enemies = this.cachedHeroes.filter(h => h.IsEnemy(hero) && !h.IsIllusion)
+		const allies = this.cachedHeroes.filter(h => !h.IsEnemy(hero) && !h.IsIllusion && h.IsAlive)
+		const enemies = this.cachedHeroes.filter(h => h.IsEnemy(hero) && !h.IsIllusion && h.IsAlive && h.IsVisible)
 
 		for (const spot of jungleSpots) {
 			if (this.emptySpots.has(spot.name)) continue
 
-			const nearestAlly = this.skipIfAllyFarming.value ? allies.find(a => a.Distance2D(spot.pos) < 850) : null
-			const nearestEnemy = this.skipIfEnemyFarming.value ? enemies.find(a => a.Distance2D(spot.pos) < 850) : null
+			const nearestAlly = allies.find(a => a.Distance2D(spot.pos) < 850)
+			const nearestEnemy = enemies.find(a => a.Distance2D(spot.pos) < 850)
 			const harvester = nearestAlly || nearestEnemy
 
 			if (harvester) {
@@ -3034,19 +3043,25 @@ new (class JungleFarmScript {
 				}
 
 				const timeAtSpot = rawTime - this.allyAtSpotSince.get(spot.name)!
-				const isFarming = harvester.IsAttacking || timeAtSpot > 2.0
+				const isFarming = harvester.IsAttacking || timeAtSpot > 1.0
 
-				// Если кто-то "занял" спот (стоит долго или атакует), проверяем наличие крипов
-				if (isFarming) {
-					const neutrals = this.cachedCreeps.filter(c =>
-						c.IsAlive &&
-						c.IsNeutral &&
-						c.Distance2D(spot.pos) < 900
-					)
+				// Проверяем живых нейтралов на споте
+				const neutrals = this.cachedCreeps.filter(c =>
+					c.IsAlive &&
+					c.Health > 0 &&
+					!c.IsDormant &&
+					(c.IsNeutral || c.Name.includes("neutral")) &&
+					c.Distance2D(spot.pos) < 1000
+				)
 
-					if (neutrals.length === 0) {
-						this.emptySpots.add(spot.name)
-						this.Log(`Спот ${spot.name} зафармлен (${harvester.Name.replace("npc_dota_hero_", "")})`)
+				if (neutrals.length === 0 && (isFarming || harvester.Distance2D(spot.pos) < 600)) {
+					this.emptySpots.add(spot.name)
+					this.Log(`Спот ${spot.name} зафармлен (${harvester.Name.replace("npc_dota_hero_", "")})`)
+					for (const [, state] of this.unitStates) {
+						if (state.currentJungleSpotName === spot.name) {
+							state.currentJungleSpotName = null
+							state.lastSpotArrivalTime = 0
+						}
 					}
 				}
 			} else {
