@@ -2693,7 +2693,7 @@ new (class JungleFarmScript {
 					state.stuckCheckTime = rawTime
 				}
 
-				if (dist <= 150) {
+				if (dist <= 400) {
 					this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
 					this.emptySpots.add(nearestSpot.name)
 					state.currentJungleSpotName = null
