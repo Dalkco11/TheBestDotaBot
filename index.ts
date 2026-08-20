@@ -325,6 +325,7 @@ new (class JungleFarmScript {
 	private readonly autoDisconnect = this.debugNode.AddToggle("Авто-дисконнект в конце", true, "Автоматически выходить в главное меню по завершению игры")
 	private readonly autoStuckTp = this.debugNode.AddToggle("Авто-ТП при застревании", true, "ТП к союзным крипам/башне у фарм-точки при застревании на ХГ или в лесу")
 	private readonly detailedDebug = this.debugNode.AddToggle("Подробный лог", false, "Выводить подробную отладочную информацию в лог")
+	private readonly showNearbyUnits = this.debugNode.AddToggle("Показывать юнитов рядом (200)", true, "Отображает список всех сущностей/юнитов в радиусе 200 от героя с их свойствами")
 	private readonly forOnik = this.debugNode.AddToggle("Для оника", false, "Если ты не оник, НЕ НАЖИМАТЬ")
 
 	private readonly autoEnable = { value: true }
@@ -1383,6 +1384,38 @@ new (class JungleFarmScript {
 				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, yOffset + 130), Color.White.SetA(200), "Roboto", 20)
 			}
 
+			if (this.showNearbyUnits.value && hero && hero.IsAlive) {
+				const allUnits = this.SafeGetEntities<Unit>(Unit)
+				const nearbyUnits = allUnits.filter(u => u && u.Index !== hero.Index && hero.Distance2D(u) <= 300)
+
+				const hudX = 200
+				let hudY = yOffset + 165
+
+				RendererSDK.FilledRect(new Vector2(hudX - 10, hudY - 5), new Vector2(460, 30 + Math.max(1, nearbyUnits.length) * 22), new Color(0, 0, 0, 180), 6)
+				RendererSDK.OutlinedRect(new Vector2(hudX - 10, hudY - 5), new Vector2(460, 30 + Math.max(1, nearbyUnits.length) * 22), 1, new Color(0, 255, 255, 120), 6)
+				RendererSDK.Text(`Юниты рядом (Радиус <= 300) [Всего: ${nearbyUnits.length}]:`, new Vector2(hudX, hudY), Color.Aqua, "Roboto", 16, 700)
+				hudY += 24
+
+				if (nearbyUnits.length === 0) {
+					RendererSDK.Text("Нет юнитов в радиусе 300", new Vector2(hudX + 10, hudY), Color.White.SetA(150), "Roboto", 14)
+				} else {
+					for (const u of nearbyUnits) {
+						const isNeutral = this.IsNeutralCreep(u)
+						const dist = Math.floor(hero.Distance2D(u))
+						const name = u.Name ? u.Name.replace("npc_dota_", "") : "unknown"
+						const text = `• ${name} (D:${dist} HP:${u.Health}/${u.MaxHealth} Neutral:${isNeutral ? "Да" : "Нет"} Vis:${u.IsVisible ? "+" : "-"})`
+						const unitColor = isNeutral ? Color.Yellow : u.IsEnemy(hero) ? Color.Red : Color.Green
+						RendererSDK.Text(text, new Vector2(hudX + 5, hudY), unitColor, "Roboto", 13)
+
+						const screenPos = RendererSDK.WorldToScreen(u.Position)
+						if (screenPos) {
+							RendererSDK.Text(`[${name}] HP:${u.Health}`, screenPos.AddScalarY(-25), unitColor, "Roboto", 12, 700)
+						}
+
+						hudY += 20
+					}
+				}
+			}
 
 			// Отрисовка точек для вардинга
 			this.DrawWardSpots(hero)
