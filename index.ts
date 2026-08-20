@@ -1639,16 +1639,6 @@ new (class JungleFarmScript {
 
 			let mainOrderSent = this.Farm(hero, state)
 
-			if (!mainOrderSent) {
-				const target = hero.Target
-				if (target && this.IsInTowerRange(target.Position, hero)) {
-					hero.OrderStop(false, true)
-					this.setStatus(state, "Остановка (Цель под башней)", hero)
-					state.lastOrderTime = rawTime
-					return
-				}
-			}
-
 			// Если основная логика не отправила приказ, но АПМ слишком низкий - шлем "филлер"
 			// Не сбиваем текущую атаку, ченнелинг или движение
 			if (!mainOrderSent && this.maintainAPM.value && state.actionTimestamps.length < this.minAPMStr.value && !hero.IsAttacking && !hero.IsChanneling) {
@@ -2658,8 +2648,7 @@ new (class JungleFarmScript {
 						c.IsVisible &&
 						!c.IsPhantom &&
 						!c.IsInvulnerable &&
-						(c.Distance2D(nearestSpot.pos) < 1400 || (hero.Distance2D(nearestSpot.pos) < 1400 && hero.Distance2D(c) < 1000)) &&
-						!this.IsInTowerRange(c.Position, hero)
+						(c.Distance2D(nearestSpot.pos) < 1400 || (hero.Distance2D(nearestSpot.pos) < 1400 && hero.Distance2D(c) < 1000))
 				)
 
 				if (neutralsInSpot.length > 0) {
