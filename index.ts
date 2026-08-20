@@ -379,11 +379,28 @@ new (class JungleFarmScript {
 		return new Vector3(pos.x + randomOffset(), pos.y + randomOffset(), pos.z)
 	}
 
+	private IsNeutralCreep(c: Unit | Creep): boolean {
+		if (!c) return false
+		if ((c as any).IsNeutral) return true
+		if (c.Team === 4) return true // Team.Neutral
+		const name = c.Name.toLowerCase()
+		if (name.includes("goodguys") || name.includes("badguys") || name.includes("lane")) return false
+		if (name.includes("neutral") || name.includes("golem") || name.includes("centaur") || 
+		    name.includes("satyr") || name.includes("kobold") || name.includes("wolf") || 
+		    name.includes("ursa") || name.includes("troll") || name.includes("harpy") || 
+		    name.includes("dragon") || name.includes("drake") || name.includes("lizard") ||
+		    name.includes("shaman") || name.includes("ghost") || name.includes("stalker") ||
+		    name.includes("ogre") || name.includes("gnoll")) {
+			return true
+		}
+		return false
+	}
+
 	private GetRandomTargetInRadius(center: Creep, radius: number, hero: Unit): Creep {
 		const nearby = this.cachedCreeps.filter(c =>
 			c.IsAlive &&
 			c.IsVisible &&
-			(center.IsNeutral ? (c.IsNeutral || c.Name.includes("neutral")) : c.IsEnemy(hero)) &&
+			(this.IsNeutralCreep(center) ? this.IsNeutralCreep(c) : c.IsEnemy(hero)) &&
 			c.Distance2D(center) <= radius
 		)
 		if (nearby.length <= 1) return center
@@ -1089,12 +1106,12 @@ new (class JungleFarmScript {
 			}
 
 			// Мгновенная очистка спота при смерти нейтрала (союзник, враг или локальный герой)
-			if (victim instanceof Creep && (victim.IsNeutral || victim.Name.includes("neutral"))) {
+			if (victim instanceof Creep && this.IsNeutralCreep(victim)) {
 				const nearestSpot = jungleSpots.slice().sort((a, b) => victim.Distance2D(a.pos) - victim.Distance2D(b.pos))[0]
-				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 1100) {
+				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 1400) {
 					// Проверяем, есть ли рядом подконтрольный герой или союзник
 					const hasVisionOfSpot = this.SafeGetEntities<Unit>(Unit).some(u =>
-						u.IsHero && u.IsAlive && (hero ? !u.IsEnemy(hero) : true) && u.Distance2D(nearestSpot.pos) < 1200
+						u.IsHero && u.IsAlive && (hero ? !u.IsEnemy(hero) : true) && u.Distance2D(nearestSpot.pos) < 1400
 					)
 					if (hasVisionOfSpot) {
 						const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).filter(c =>
@@ -1102,8 +1119,8 @@ new (class JungleFarmScript {
 							c.IsAlive &&
 							c.Health > 0 &&
 							!c.IsDormant &&
-							(c.IsNeutral || c.Name.includes("neutral")) &&
-							c.Distance2D(nearestSpot.pos) < 1100
+							this.IsNeutralCreep(c) &&
+							(c.Distance2D(nearestSpot.pos) < 1400 || (hero && c.Distance2D(hero) < 1000))
 						)
 						if (otherNeutrals.length === 0) {
 							this.emptySpots.add(nearestSpot.name)
@@ -1620,11 +1637,11 @@ new (class JungleFarmScript {
 				}
 			}
 
-			if (this.fleeFromCreepsUnderTower.value && rawTime < state.lastDamageTime + 3.0) {
+			if (this.fleeFromCreepsUnderTower.value && this.IsInTowerRange(hero.Position, hero) && rawTime < state.lastDamageTime + 3.0) {
 				const target = hero.Target
 				const isSafeToHit = target instanceof Creep && target.HP < hero.AttackDamageMax * 2
 
-				if (!target || !target.IsAlive || (this.IsInTowerRange(target.Position, hero) && !isSafeToHit)) {
+				if (!target || !target.IsAlive || !isSafeToHit) {
 					this.Flee(hero, state, "Отход (Урон под башней)")
 					return
 				}
@@ -2074,7 +2091,7 @@ new (class JungleFarmScript {
 			const midas = hero.GetItemByName("item_hand_of_midas")
 			if (midas?.IsReady && (!state.failedActions.has(midas.Name) || state.failedActions.get(midas.Name)! <= GameState.RawGameTime)) {
 				const target = this.cachedCreeps.find(
-					c => (c.IsNeutral || c.Name.includes("neutral")) && c.IsAlive && c.IsVisible && !c.IsInvulnerable && hero.Distance2D(c) < 600
+					c => this.IsNeutralCreep(c) && c.IsAlive && c.IsVisible && !c.IsInvulnerable && hero.Distance2D(c) < 600
 				)
 				if (target) {
 					hero.CastTarget(midas, target, false, true)
@@ -2289,7 +2306,7 @@ new (class JungleFarmScript {
 			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n ||
 				(typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_BASIC) !== 0n) {
 				const creep = this.cachedCreeps.find(c =>
-					(c.IsEnemy(hero) || c.IsNeutral || c.Name.includes("neutral")) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
+					(c.IsEnemy(hero) || this.IsNeutralCreep(c)) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
 					hero.Distance2D(c) < range &&
 					(!c.IsMagicImmune || ability.CanHitSpellImmuneEnemy) &&
 					!this.IsIgnoredUnit(c)
@@ -2578,16 +2595,10 @@ new (class JungleFarmScript {
 
 					state.targetPos = finalTarget.Position
 
-					const isAttackingSame = hero.TargetIndex_ === finalTarget.Index && hero.IsAttacking
+					const isAttackingSame = hero.TargetIndex_ === finalTarget.Index && (hero.IsAttacking || hero.IsMoving)
 
 					if (!isAttackingSame) {
-						const dist = hero.Distance2D(finalTarget)
-						const attackRange = hero.GetAttackRange(finalTarget) + 50
-						if (dist > attackRange) {
-							hero.MoveTo(finalTarget.Position, false, true)
-						} else {
-							hero.AttackTarget(finalTarget, false, true)
-						}
+						hero.AttackTarget(finalTarget, false, true)
 						state.lastOrderTime = GameState.RawGameTime
 						return true
 					}
@@ -2670,7 +2681,7 @@ new (class JungleFarmScript {
 
 				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
-						(c.IsNeutral || c.Name.includes("neutral")) &&
+						this.IsNeutralCreep(c) &&
 						c.IsAlive &&
 						c.Health > 0 &&
 						!c.IsDormant &&
@@ -2678,7 +2689,7 @@ new (class JungleFarmScript {
 						c.IsVisible &&
 						!c.IsPhantom &&
 						!c.IsInvulnerable &&
-						(c.Distance2D(nearestSpot.pos) < 950 || (hero.Distance2D(nearestSpot.pos) < 850 && hero.Distance2D(c) < 850)) &&
+						(c.Distance2D(nearestSpot.pos) < 1400 || (hero.Distance2D(nearestSpot.pos) < 1400 && hero.Distance2D(c) < 1000)) &&
 						!this.IsInTowerRange(c.Position, hero)
 				)
 
@@ -2686,22 +2697,16 @@ new (class JungleFarmScript {
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					const currentTarget = hero.Target
 					let neutral: Creep = closestNeutral
-					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.Health > 0 && currentTarget.IsVisible && (currentTarget.IsNeutral || currentTarget.Name.includes("neutral")) && (currentTarget.Distance2D(nearestSpot.pos) < 950 || hero.Distance2D(currentTarget) < 850)) {
+					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.Health > 0 && currentTarget.IsVisible && this.IsNeutralCreep(currentTarget) && (currentTarget.Distance2D(nearestSpot.pos) < 1400 || hero.Distance2D(currentTarget) < 1000)) {
 						neutral = currentTarget
 					}
 
 					this.setStatus(state, "Фарм леса", hero)
 					state.targetPos = neutral.Position
 
-					const isAttackingSame = hero.TargetIndex_ === neutral.Index && hero.IsAttacking
+					const isAttackingSame = hero.TargetIndex_ === neutral.Index && (hero.IsAttacking || hero.IsMoving)
 					if (!isAttackingSame && neutral.IsAlive && neutral.IsVisible) {
-						const dist = hero.Distance2D(neutral)
-						const attackRange = hero.GetAttackRange(neutral) + 50
-						if (dist > attackRange) {
-							hero.MoveTo(neutral.Position, false, true)
-						} else {
-							hero.AttackTarget(neutral, false, true)
-						}
+						hero.AttackTarget(neutral, false, true)
 						state.lastOrderTime = GameState.RawGameTime
 						return true
 					}
@@ -3050,14 +3055,14 @@ new (class JungleFarmScript {
 				const isFarming = (harvester.IsAttacking && timeAtSpot > 2.0) || timeAtSpot > 4.0
 
 				// Проверяем живых нейтралов на споте при наличии видимости
-				const hasVision = hero.Distance2D(spot.pos) < 1200 || harvester.Distance2D(spot.pos) < 600
+				const hasVision = hero.Distance2D(spot.pos) < 1400 || harvester.Distance2D(spot.pos) < 600
 				if (hasVision && isFarming) {
 					const neutrals = this.cachedCreeps.filter(c =>
 						c.IsAlive &&
 						c.Health > 0 &&
 						!c.IsDormant &&
-						(c.IsNeutral || c.Name.includes("neutral")) &&
-						c.Distance2D(spot.pos) < 1000
+						this.IsNeutralCreep(c) &&
+						c.Distance2D(spot.pos) < 1400
 					)
 
 					if (neutrals.length === 0) {
