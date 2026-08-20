@@ -382,10 +382,13 @@ new (class JungleFarmScript {
 
 	private IsNeutralCreep(c: Unit | Creep): boolean {
 		if (!c) return false
+		if (c.IsHero) return false
+		if (c.IsBuilding) return false
+		if (c.IsCourier) return false
 		if ((c as any).IsNeutral) return true
 		if (c.Team === 4) return true // Team.Neutral
-		const name = c.Name.toLowerCase()
-		if (name.includes("goodguys") || name.includes("badguys") || name.includes("lane")) return false
+		const name = c.Name ? c.Name.toLowerCase() : ""
+		if (name.includes("hero_") || name.includes("goodguys") || name.includes("badguys") || name.includes("lane")) return false
 		if (name.includes("neutral") || name.includes("golem") || name.includes("centaur") || 
 		    name.includes("satyr") || name.includes("kobold") || name.includes("wolf") || 
 		    name.includes("ursa") || name.includes("troll") || name.includes("harpy") || 
@@ -1160,16 +1163,6 @@ new (class JungleFarmScript {
 		try {
 			if (typeof GameState === 'undefined') return
 
-			// Draw Screen Log early so it works even if hero is not found (main menu)
-			if (this.drawDebugLog.value) {
-				const startX = 200
-				const startY = 360
-				RendererSDK.Text("Последние действия:", new Vector2(startX, startY), Color.Aqua, "Roboto", 18)
-				for (let i = 0; i < this.logBuffer.length; i++) {
-					RendererSDK.Text(this.logBuffer[i], new Vector2(startX, startY + 25 + i * 20), Color.White.SetA(200), "Roboto", 14)
-				}
-			}
-
 			const hero = LocalPlayer?.Hero
 
 			// Auto-disable logic if in main menu
@@ -1335,10 +1328,10 @@ new (class JungleFarmScript {
 				}
 			}
 
-			let yOffset = 200
+			let yOffset = 130
 			const commonStatus = `Пустые лагеря: ${this.emptySpots.size}/${jungleSpots.length}`
-			RendererSDK.Text(commonStatus, new Vector2(200, yOffset), Color.White, "Roboto", 20)
-			yOffset += 30
+			RendererSDK.Text(commonStatus, new Vector2(200, yOffset), Color.White, "Roboto", 18)
+			yOffset += 24
 
 			for (const [index, state] of this.unitStates) {
 				const unit = EntityManager.EntityByIndex(index) as Unit
@@ -1370,10 +1363,11 @@ new (class JungleFarmScript {
 			const pointsText = `Очки способностей: ${hero.AbilityPoints} | Уровень: ${hero.Level}`
 			const stateText = `Скрипт ${this.state.value ? "ВКЛЮЧЕН" : "ВЫКЛЮЧЕН"}`
 
-			RendererSDK.Text(teamText, new Vector2(200, yOffset + 10), Color.White, "Roboto", 20)
-			RendererSDK.Text(targetText, new Vector2(200, yOffset + 40), Color.White, "Roboto", 20)
-			RendererSDK.Text(pointsText, new Vector2(200, yOffset + 70), Color.Yellow, "Roboto", 20)
-			RendererSDK.Text(stateText, new Vector2(200, yOffset + 100), this.state.value ? Color.Green : Color.Red, "Roboto", 20)
+			RendererSDK.Text(teamText, new Vector2(200, yOffset), Color.White, "Roboto", 16)
+			RendererSDK.Text(targetText, new Vector2(200, yOffset + 22), Color.White, "Roboto", 16)
+			RendererSDK.Text(pointsText, new Vector2(200, yOffset + 44), Color.Yellow, "Roboto", 16)
+			RendererSDK.Text(stateText, new Vector2(200, yOffset + 66), this.state.value ? Color.Green : Color.Red, "Roboto", 16)
+			yOffset += 90
 
 			if (this.showGameTimer.value) {
 				const time = Math.floor(GameState.RawGameTime - (GameRules?.GameStartTime ?? 0))
@@ -1381,38 +1375,48 @@ new (class JungleFarmScript {
 				const mins = Math.floor(absTime / 60)
 				const secs = absTime % 60
 				const timeStr = `${time < 0 ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
-				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, yOffset + 130), Color.White.SetA(200), "Roboto", 20)
+				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, yOffset), Color.White.SetA(200), "Roboto", 16)
+				yOffset += 24
 			}
 
+			// Вывод лога действий
+			if (this.drawDebugLog.value) {
+				RendererSDK.Text("Последние действия:", new Vector2(200, yOffset), Color.Aqua, "Roboto", 16)
+				yOffset += 20
+				for (let i = 0; i < this.logBuffer.length; i++) {
+					RendererSDK.Text(this.logBuffer[i], new Vector2(200, yOffset), Color.White.SetA(180), "Roboto", 13)
+					yOffset += 18
+				}
+				yOffset += 10
+			}
+
+			// Список юнитов рядом под логом (без заднего фона)
 			if (this.showNearbyUnits.value && hero && hero.IsAlive) {
 				const allUnits = this.SafeGetEntities<Unit>(Unit)
 				const nearbyUnits = allUnits.filter(u => u && u.Index !== hero.Index && hero.Distance2D(u) <= 300)
 
-				const hudX = 200
-				let hudY = yOffset + 165
-
-				RendererSDK.FilledRect(new Vector2(hudX - 10, hudY - 5), new Vector2(460, 30 + Math.max(1, nearbyUnits.length) * 22), new Color(0, 0, 0, 180), 6)
-				RendererSDK.OutlinedRect(new Vector2(hudX - 10, hudY - 5), new Vector2(460, 30 + Math.max(1, nearbyUnits.length) * 22), 1, new Color(0, 255, 255, 120), 6)
-				RendererSDK.Text(`Юниты рядом (Радиус <= 300) [Всего: ${nearbyUnits.length}]:`, new Vector2(hudX, hudY), Color.Aqua, "Roboto", 16, 700)
-				hudY += 24
+				RendererSDK.Text(`Юниты рядом (Радиус <= 300) [Всего: ${nearbyUnits.length}]:`, new Vector2(200, yOffset), Color.Aqua, "Roboto", 15, 700)
+				yOffset += 20
 
 				if (nearbyUnits.length === 0) {
-					RendererSDK.Text("Нет юнитов в радиусе 300", new Vector2(hudX + 10, hudY), Color.White.SetA(150), "Roboto", 14)
+					RendererSDK.Text("• Нет юнитов рядом", new Vector2(205, yOffset), Color.White.SetA(130), "Roboto", 13)
 				} else {
 					for (const u of nearbyUnits) {
 						const isNeutral = this.IsNeutralCreep(u)
 						const dist = Math.floor(hero.Distance2D(u))
 						const name = u.Name ? u.Name.replace("npc_dota_", "") : "unknown"
-						const text = `• ${name} (D:${dist} HP:${u.Health}/${u.MaxHealth} Neutral:${isNeutral ? "Да" : "Нет"} Vis:${u.IsVisible ? "+" : "-"})`
+						const hp = u.HP ?? (u as any).Health ?? 0
+						const maxHp = u.MaxHP ?? (u as any).MaxHealth ?? 0
+						const text = `• ${name} (D:${dist} HP:${hp}/${maxHp} Neutral:${isNeutral ? "Да" : "Нет"} Vis:${u.IsVisible ? "+" : "-"})`
 						const unitColor = isNeutral ? Color.Yellow : u.IsEnemy(hero) ? Color.Red : Color.Green
-						RendererSDK.Text(text, new Vector2(hudX + 5, hudY), unitColor, "Roboto", 13)
+						RendererSDK.Text(text, new Vector2(205, yOffset), unitColor, "Roboto", 13)
 
 						const screenPos = RendererSDK.WorldToScreen(u.Position)
 						if (screenPos) {
-							RendererSDK.Text(`[${name}] HP:${u.Health}`, screenPos.AddScalarY(-25), unitColor, "Roboto", 12, 700)
+							RendererSDK.Text(`[${name}] HP:${hp}`, screenPos.AddScalarY(-25), unitColor, "Roboto", 12, 700)
 						}
 
-						hudY += 20
+						yOffset += 18
 					}
 				}
 			}
