@@ -2699,6 +2699,10 @@ new (class JungleFarmScript {
 				)
 
 				if (neutralsInSpot.length > 0) {
+					state.stuckCheckTime = rawTime
+					state.lastPosForStuckCheck = undefined
+					state.lastSpotArrivalTime = 0
+
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					const currentTarget = hero.Target
 					let neutral: Creep = closestNeutral
@@ -2728,16 +2732,6 @@ new (class JungleFarmScript {
 								state.stuckCheckTime = rawTime
 								return true
 							}
-						}
-						if (dist < 300) {
-							this.Log(`Спот ${nearestSpot.name} помечен пустым (Застревание, dist: ${Math.floor(dist)})`, hero)
-							this.emptySpots.add(nearestSpot.name)
-							state.currentJungleSpotName = null
-							state.lastOrderTime = 0
-							state.lastSpotArrivalTime = 0
-							state.lastPosForStuckCheck = undefined
-							state.stuckCheckTime = rawTime
-							return true
 						}
 					}
 					state.lastPosForStuckCheck = hero.Position
