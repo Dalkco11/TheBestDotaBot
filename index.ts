@@ -1566,10 +1566,20 @@ new (class JungleFarmScript {
 			if (this.ignoreHeroes.value && hero.IsAttacking) {
 				const target = hero.Target
 				if (target instanceof Unit && target.IsHero && target.IsEnemy(hero)) {
-					hero.OrderStop(false, true)
-					this.setStatus(state, "Остановка (Игнор героев)", hero)
-					state.lastOrderTime = rawTime
-					return
+					if (state.currentFarmMode === "jungle" && state.currentJungleSpotName) {
+						const spot = jungleSpots.find(s => s.name === state.currentJungleSpotName)
+						if (spot) {
+							hero.AttackMove(spot.pos, false, true)
+							state.lastOrderTime = rawTime
+							return
+						}
+					}
+					const creep = this.cachedCreeps.find(c => c.IsAlive && c.IsVisible && hero.Distance2D(c) < 800)
+					if (creep) {
+						hero.AttackTarget(creep, false, true)
+						state.lastOrderTime = rawTime
+						return
+					}
 				}
 			}
 
@@ -2751,16 +2761,13 @@ new (class JungleFarmScript {
 					}
 
 					this.setStatus(state, `Проверка спота: ${nearestSpot.name}`, hero)
-					if (dist > 150) {
-						hero.AttackMove(nearestSpot.pos, false, true)
-						state.lastOrderTime = rawTime
-					}
+					hero.AttackMove(nearestSpot.pos, false, true)
+					state.lastOrderTime = rawTime
 					return true
 				} else {
 					this.setStatus(state, `Путь в лес: ${nearestSpot.name}`, hero)
 					state.lastSpotArrivalTime = 0
-					const movePos = this.GetSafeMovePos(hero.Position, nearestSpot.pos, hero, state)
-					hero.AttackMove(this.GetRandomizedPosition(movePos), false, true)
+					hero.AttackMove(nearestSpot.pos, false, true)
 					state.lastOrderTime = GameState.RawGameTime
 					return true
 				}
