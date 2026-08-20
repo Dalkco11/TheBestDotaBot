@@ -1449,9 +1449,10 @@ new (class JungleFarmScript {
 
 			// Cache entities
 			this.cachedTowers = this.SafeGetEntities<Tower>(Tower)
-			this.cachedCreeps = this.SafeGetEntities<Creep>(Creep)
+			const allUnits = this.SafeGetEntities<Unit>(Unit)
+			this.cachedCreeps = allUnits.filter(u => u.IsCreep || u instanceof Creep || this.IsNeutralCreep(u)) as unknown as Creep[]
 			this.cachedRunes = this.pickAllRunes.value ? this.SafeGetEntities<Rune>(Rune) : []
-			this.cachedHeroes = this.SafeGetEntities<Unit>(Unit).filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
+			this.cachedHeroes = allUnits.filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
 
 			// Если только что использован скилл или предмет, даем время на завершение анимации каста
 			if (justActed) {
@@ -2662,9 +2663,13 @@ new (class JungleFarmScript {
 					this.setStatus(state, "Фарм леса", hero)
 					state.targetPos = neutral.Position
 
-					hero.AttackTarget(neutral, false, true)
-					state.lastOrderTime = GameState.RawGameTime
-					return true
+					const isCurrentlyAttackingTarget = (hero.Target === neutral || hero.TargetIndex_ === neutral.Index) && hero.IsAttacking
+					if (!isCurrentlyAttackingTarget) {
+						hero.AttackTarget(neutral, false, true)
+						state.lastOrderTime = GameState.RawGameTime
+						return true
+					}
+					return false
 				}
 
 				const dist = hero.Distance2D(nearestSpot.pos)
@@ -2693,12 +2698,26 @@ new (class JungleFarmScript {
 					state.stuckCheckTime = rawTime
 				}
 
-				if (dist <= 400) {
-					this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
-					this.emptySpots.add(nearestSpot.name)
-					state.currentJungleSpotName = null
-					state.lastOrderTime = 0
-					state.lastSpotArrivalTime = 0
+				if (dist <= 450) {
+					if (state.lastSpotArrivalTime === 0) {
+						state.lastSpotArrivalTime = rawTime
+					}
+
+					const timeAtSpot = rawTime - state.lastSpotArrivalTime
+					if (timeAtSpot >= 1.5) {
+						this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
+						this.emptySpots.add(nearestSpot.name)
+						state.currentJungleSpotName = null
+						state.lastOrderTime = 0
+						state.lastSpotArrivalTime = 0
+						return true
+					}
+
+					this.setStatus(state, `Проверка спота: ${nearestSpot.name}`, hero)
+					if (dist > 150) {
+						hero.AttackMove(nearestSpot.pos, false, true)
+						state.lastOrderTime = rawTime
+					}
 					return true
 				} else {
 					this.setStatus(state, `Путь в лес: ${nearestSpot.name}`, hero)
