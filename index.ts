@@ -2690,7 +2690,6 @@ new (class JungleFarmScript {
 					c =>
 						this.IsNeutralCreep(c) &&
 						c.IsAlive &&
-						c.Health > 0 &&
 						!c.IsDormant &&
 						c.IsSpawned &&
 						c.IsVisible &&
@@ -2703,7 +2702,7 @@ new (class JungleFarmScript {
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					const currentTarget = hero.Target
 					let neutral: Creep = closestNeutral
-					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.Health > 0 && currentTarget.IsVisible && this.IsNeutralCreep(currentTarget) && (currentTarget.Distance2D(nearestSpot.pos) < 1400 || hero.Distance2D(currentTarget) < 1000)) {
+					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.IsVisible && this.IsNeutralCreep(currentTarget) && (currentTarget.Distance2D(nearestSpot.pos) < 1400 || hero.Distance2D(currentTarget) < 1000)) {
 						neutral = currentTarget
 					}
 
