@@ -383,8 +383,7 @@ new (class JungleFarmScript {
 		const nearby = this.cachedCreeps.filter(c =>
 			c.IsAlive &&
 			c.IsVisible &&
-			c.IsEnemy(hero) &&
-			c.IsNeutral === center.IsNeutral &&
+			(center.IsNeutral ? (c.IsNeutral || c.Name.includes("neutral")) : c.IsEnemy(hero)) &&
 			c.Distance2D(center) <= radius
 		)
 		if (nearby.length <= 1) return center
@@ -1093,21 +1092,27 @@ new (class JungleFarmScript {
 			if (victim instanceof Creep && (victim.IsNeutral || victim.Name.includes("neutral"))) {
 				const nearestSpot = jungleSpots.slice().sort((a, b) => victim.Distance2D(a.pos) - victim.Distance2D(b.pos))[0]
 				if (nearestSpot && victim.Distance2D(nearestSpot.pos) < 1100) {
-					const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).filter(c =>
-						c.Index !== victim.Index &&
-						c.IsAlive &&
-						c.Health > 0 &&
-						!c.IsDormant &&
-						(c.IsNeutral || c.Name.includes("neutral")) &&
-						c.Distance2D(nearestSpot.pos) < 1100
+					// Проверяем, есть ли рядом подконтрольный герой или союзник
+					const hasVisionOfSpot = this.SafeGetEntities<Unit>(Unit).some(u =>
+						u.IsHero && u.IsAlive && (hero ? !u.IsEnemy(hero) : true) && u.Distance2D(nearestSpot.pos) < 1200
 					)
-					if (otherNeutrals.length === 0) {
-						this.emptySpots.add(nearestSpot.name)
-						this.Log(`Спот ${nearestSpot.name} зафармлен (убит последний нейтрал)`)
-						for (const [, state] of this.unitStates) {
-							if (state.currentJungleSpotName === nearestSpot.name) {
-								state.currentJungleSpotName = null
-								state.lastSpotArrivalTime = 0
+					if (hasVisionOfSpot) {
+						const otherNeutrals = EntityManager.GetEntitiesByClass(Creep).filter(c =>
+							c.Index !== victim.Index &&
+							c.IsAlive &&
+							c.Health > 0 &&
+							!c.IsDormant &&
+							(c.IsNeutral || c.Name.includes("neutral")) &&
+							c.Distance2D(nearestSpot.pos) < 1100
+						)
+						if (otherNeutrals.length === 0) {
+							this.emptySpots.add(nearestSpot.name)
+							this.Log(`Спот ${nearestSpot.name} зафармлен (убит последний нейтрал)`)
+							for (const [, state] of this.unitStates) {
+								if (state.currentJungleSpotName === nearestSpot.name) {
+									state.currentJungleSpotName = null
+									state.lastSpotArrivalTime = 0
+								}
 							}
 						}
 					}
@@ -2069,7 +2074,7 @@ new (class JungleFarmScript {
 			const midas = hero.GetItemByName("item_hand_of_midas")
 			if (midas?.IsReady && (!state.failedActions.has(midas.Name) || state.failedActions.get(midas.Name)! <= GameState.RawGameTime)) {
 				const target = this.cachedCreeps.find(
-					c => c.IsEnemy(hero) && c.IsNeutral && c.IsAlive && c.IsVisible && !c.IsInvulnerable && c.Name.includes("neutral") && hero.Distance2D(c) < 600
+					c => (c.IsNeutral || c.Name.includes("neutral")) && c.IsAlive && c.IsVisible && !c.IsInvulnerable && hero.Distance2D(c) < 600
 				)
 				if (target) {
 					hero.CastTarget(midas, target, false, true)
@@ -2284,7 +2289,7 @@ new (class JungleFarmScript {
 			if ((typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_CREEP) !== 0n ||
 				(typeMask & DOTA_UNIT_TARGET_TYPE.DOTA_UNIT_TARGET_BASIC) !== 0n) {
 				const creep = this.cachedCreeps.find(c =>
-					c.IsEnemy(hero) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
+					(c.IsEnemy(hero) || c.IsNeutral || c.Name.includes("neutral")) && c.IsAlive && c.IsVisible && !c.IsInvulnerable &&
 					hero.Distance2D(c) < range &&
 					(!c.IsMagicImmune || ability.CanHitSpellImmuneEnemy) &&
 					!this.IsIgnoredUnit(c)
@@ -2665,7 +2670,6 @@ new (class JungleFarmScript {
 
 				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
-						c.IsEnemy(hero) &&
 						(c.IsNeutral || c.Name.includes("neutral")) &&
 						c.IsAlive &&
 						c.Health > 0 &&
@@ -3043,24 +3047,27 @@ new (class JungleFarmScript {
 				}
 
 				const timeAtSpot = rawTime - this.allyAtSpotSince.get(spot.name)!
-				const isFarming = harvester.IsAttacking || timeAtSpot > 1.0
+				const isFarming = (harvester.IsAttacking && timeAtSpot > 2.0) || timeAtSpot > 4.0
 
-				// Проверяем живых нейтралов на споте
-				const neutrals = this.cachedCreeps.filter(c =>
-					c.IsAlive &&
-					c.Health > 0 &&
-					!c.IsDormant &&
-					(c.IsNeutral || c.Name.includes("neutral")) &&
-					c.Distance2D(spot.pos) < 1000
-				)
+				// Проверяем живых нейтралов на споте при наличии видимости
+				const hasVision = hero.Distance2D(spot.pos) < 1200 || harvester.Distance2D(spot.pos) < 600
+				if (hasVision && isFarming) {
+					const neutrals = this.cachedCreeps.filter(c =>
+						c.IsAlive &&
+						c.Health > 0 &&
+						!c.IsDormant &&
+						(c.IsNeutral || c.Name.includes("neutral")) &&
+						c.Distance2D(spot.pos) < 1000
+					)
 
-				if (neutrals.length === 0 && (isFarming || harvester.Distance2D(spot.pos) < 600)) {
-					this.emptySpots.add(spot.name)
-					this.Log(`Спот ${spot.name} зафармлен (${harvester.Name.replace("npc_dota_hero_", "")})`)
-					for (const [, state] of this.unitStates) {
-						if (state.currentJungleSpotName === spot.name) {
-							state.currentJungleSpotName = null
-							state.lastSpotArrivalTime = 0
+					if (neutrals.length === 0) {
+						this.emptySpots.add(spot.name)
+						this.Log(`Спот ${spot.name} зафармлен (${harvester.Name.replace("npc_dota_hero_", "")})`)
+						for (const [, state] of this.unitStates) {
+							if (state.currentJungleSpotName === spot.name) {
+								state.currentJungleSpotName = null
+								state.lastSpotArrivalTime = 0
+							}
 						}
 					}
 				}
