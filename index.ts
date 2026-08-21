@@ -1619,6 +1619,9 @@ new (class JungleFarmScript {
 				state.lotusArrivalTime = 0
 				state.wisdomArrivalTime = 0
 				state.targetPos = undefined
+				state.lastCreepDeathPos = undefined
+				state.currentJungleSpotName = null
+				state.lastPosBeforeHeal = undefined
 				return
 			}
 
@@ -2960,14 +2963,22 @@ new (class JungleFarmScript {
 				state.targetPos = undefined
 
 				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
-				if (distToFountain < 6000 && !state.isReturningAfterHeal) {
+				if (distToFountain < 6000 && !state.isGoingToFountain) {
+					// 1. Пробуем сделать ТП на линию
+					if (this.tpAfterHeal.value && rawTime > state.lastTpTime + 10.0) {
+						if (this.TryTpAfterHeal(hero, state)) {
+							return true
+						}
+					}
+
+					// 2. Идем пешком на линию
 					const targetPos = this.GetDefaultLanePos(hero, state)
 					this.setStatus(state, "Выход на линию", hero)
 					state.targetPos = targetPos
-					if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+					if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.2) {
 						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
 						hero.MoveTo(movePos, false, true)
-						state.lastOrderTime = GameState.RawGameTime
+						state.lastOrderTime = rawTime
 					}
 					return true
 				}
@@ -3126,8 +3137,10 @@ new (class JungleFarmScript {
 			return true
 		})
 
-		// На стадии лайнинга или ранней игре ограничение 3500 от героя
-		if (hero.Level < this.laneOnlyUntilLevel.value || hero.Level < 6) {
+		// На стадии лайнинга или ранней игре ограничение 3500 от героя (если не на базе)
+		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
+		const isAtBase = fountain && hero.Distance2D(fountain) < 5500
+		if (!isAtBase && (hero.Level < this.laneOnlyUntilLevel.value || hero.Level < 6)) {
 			enabledSpots = enabledSpots.filter(spot => hero.Distance2D(spot.pos) < 3500)
 		}
 
@@ -3158,7 +3171,7 @@ new (class JungleFarmScript {
 	private GetNearestLaneCreep(hero: Unit, state: UnitState): Creep | undefined {
 		const fountain = this.SafeGetEntities<Fountain>(Fountain).find(f => !f.IsEnemy(hero))
 		const isAtBase = fountain && hero.Distance2D(fountain) < 5500
-		const maxDist = (isAtBase || state.isReturningAfterHeal) ? 4000 : 3500
+		const maxDist = (isAtBase || state.isReturningAfterHeal) ? 15000 : 3500
 
 		if (this.detailedDebug.value && state.isReturningAfterHeal) {
 			this.Log(`Поиск (HeroTeam:${hero.Team} Base:${isAtBase} Return:true)`, hero)
