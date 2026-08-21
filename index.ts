@@ -510,6 +510,226 @@ new (class JungleFarmScript {
 		}
 	}
 
+	private GetAutoLevelingCandidates(hero: Unit, settings: HeroLevelingSettings): Ability[] {
+		const spells: Ability[] = []
+		for (const s of hero.Spells) {
+			if (s !== undefined && s !== null) {
+				spells.push(s)
+			}
+		}
+
+		const allTalents: Ability[] = []
+		for (const s of spells) {
+			if (s.Name.startsWith("special_bonus_")) {
+				allTalents.push(s)
+			}
+		}
+
+		const candidates: Ability[] = []
+
+		const isLearnable = (s: Ability | undefined): s is Ability => {
+			if (!s) return false
+			if (s.IsNotLearnable || s.IsAttributes) return false
+			if (s.Level >= s.MaxLevel) return false
+			if (hero.Level < s.RequiredLevel) return false
+			return true
+		}
+
+		// 1. УЛЬТА (Всегда первым качать ульту, если доступна)
+		if (settings.prioritizeUlt.value) {
+			const ultimates = spells.filter(s => s.IsUltimate && isLearnable(s))
+			candidates.push(...ultimates)
+		}
+
+		const heroName = hero.Name.toLowerCase()
+
+		// 2. СПЕЦИАЛЬНЫЕ ПРИОРИТЕТЫ ДЛЯ КОНКРЕТНЫХ ГЕРОЕВ
+		// Исключение: Алхимик -> Acid Spray первым, затем пассивка Greevil's Greed
+		const heroOverrides: Record<string, string[]> = {
+			npc_dota_hero_alchemist: [
+				"alchemist_acid_spray",
+				"alchemist_greevils_greed",
+				"alchemist_unstable_concoction"
+			],
+			npc_dota_hero_sven: [
+				"sven_great_cleave",
+				"sven_warcry",
+				"sven_storm_bolt"
+			],
+			npc_dota_hero_antimage: [
+				"antimage_mana_break",
+				"antimage_blink",
+				"antimage_counterspell"
+			],
+			npc_dota_hero_phantom_assassin: [
+				"phantom_assassin_blur",
+				"phantom_assassin_phantom_strike",
+				"phantom_assassin_stifling_dagger"
+			],
+			npc_dota_hero_legion_commander: [
+				"legion_commander_moment_of_courage",
+				"legion_commander_press_the_attack",
+				"legion_commander_overwhelming_odds"
+			],
+			npc_dota_hero_axe: [
+				"axe_counter_helix",
+				"axe_berserkers_call",
+				"axe_battle_hunger"
+			],
+			npc_dota_hero_bristleback: [
+				"bristleback_quill_spray",
+				"bristleback_bristleback",
+				"bristleback_viscous_nasal_goo"
+			],
+			npc_dota_hero_juggernaut: [
+				"juggernaut_blade_dance",
+				"juggernaut_blade_fury",
+				"juggernaut_healing_ward"
+			],
+			npc_dota_hero_luna: [
+				"luna_moon_glaive",
+				"luna_lunar_blessing",
+				"luna_lucent_beam"
+			],
+			npc_dota_hero_slark: [
+				"slark_essence_shift",
+				"slark_dark_pact",
+				"slark_pounce"
+			],
+			npc_dota_hero_ursa: [
+				"ursa_fury_swipes",
+				"ursa_overpower",
+				"ursa_earthshock"
+			],
+			npc_dota_hero_skeleton_king: [
+				"skeleton_king_mortal_strike",
+				"skeleton_king_vampiric_aura",
+				"skeleton_king_hellfire_blast"
+			],
+			npc_dota_hero_medusa: [
+				"medusa_split_shot",
+				"medusa_mana_shield",
+				"medusa_mystic_snake"
+			],
+			npc_dota_hero_sniper: [
+				"sniper_take_aim",
+				"sniper_headshot",
+				"sniper_shrapnel"
+			],
+			npc_dota_hero_viper: [
+				"viper_corrosive_skin",
+				"viper_nethertoxin",
+				"viper_poison_attack"
+			],
+			npc_dota_hero_drow_ranger: [
+				"drow_ranger_multishot",
+				"drow_ranger_frost_arrows",
+				"drow_ranger_wave_of_silence"
+			],
+			npc_dota_hero_dragon_knight: [
+				"dragon_knight_dragon_blood",
+				"dragon_knight_breathe_fire",
+				"dragon_knight_dragon_tail"
+			],
+			npc_dota_hero_bloodseeker: [
+				"bloodseeker_thirst",
+				"bloodseeker_bloodrage",
+				"bloodseeker_blood_bath"
+			],
+			npc_dota_hero_templar_assassin: [
+				"templar_assassin_psi_blades",
+				"templar_assassin_refraction",
+				"templar_assassin_meld"
+			],
+			npc_dota_hero_tiny: [
+				"tiny_tree_grab",
+				"tiny_avalanche",
+				"tiny_toss"
+			],
+			npc_dota_hero_tidehunter: [
+				"tidehunter_anchor_smash",
+				"tidehunter_kraken_shell",
+				"tidehunter_gush"
+			],
+			npc_dota_hero_necrolyte: [
+				"necrolyte_heartstopper_aura",
+				"necrolyte_death_pulse",
+				"necrolyte_sadist"
+			]
+		}
+
+		if (heroOverrides[heroName]) {
+			for (const spellName of heroOverrides[heroName]) {
+				const s = spells.find(sp => sp.Name === spellName)
+				if (isLearnable(s) && !candidates.includes(s)) {
+					candidates.push(s)
+				}
+			}
+		} else {
+			// 3. ОБЩИЙ ПРИОРИТЕТ ДЛЯ ВСЕХ ОСТАЛЬНЫХ ГЕРОЕВ:
+			// 3.1. Сначала пассивки героя
+			const passives = spells.filter(s => s.IsPassive && !s.IsUltimate && !s.Name.startsWith("special_bonus_") && isLearnable(s))
+			for (const p of passives) {
+				if (!candidates.includes(p)) candidates.push(p)
+			}
+
+			// 3.2. Затем способности, помогающие фармить (AoE / Cleave / Buffs)
+			const farmKeywords = [
+				"cleave", "spray", "spin", "fury", "aura", "greed", "glaive", "swipes", 
+				"split", "overpower", "pulse", "anchor", "breathe", "tree_grab", "bloodrage", 
+				"fire", "shrapnel", "wave", "shock", "strike", "dance", "smash", "quill", 
+				"shield", "rot", "decay", "counter_helix", "moment_of_courage", "warcry", "blur", "thirst"
+			]
+			const farmSpells = spells.filter(s =>
+				!s.IsUltimate &&
+				!s.Name.startsWith("special_bonus_") &&
+				isLearnable(s) &&
+				farmKeywords.some(kw => s.Name.toLowerCase().includes(kw))
+			)
+			for (const fs of farmSpells) {
+				if (!candidates.includes(fs)) candidates.push(fs)
+			}
+		}
+
+		// 4. Выбранные скиллы из меню игрока (если настроены)
+		const priorityList = [settings.p1.SelectedID, settings.p2.SelectedID, settings.p3.SelectedID, settings.p4.SelectedID]
+		for (const id of priorityList) {
+			let target: Ability | undefined
+			if (id === 3) {
+				target = spells.find(s => s.IsUltimate)
+			} else {
+				target = hero.Spells[id] ?? undefined
+			}
+			if (isLearnable(target) && !candidates.includes(target)) {
+				candidates.push(target)
+			}
+		}
+
+		// 5. Таланты
+		for (const s of allTalents) {
+			if (!isLearnable(s)) continue
+			let tierOccupied = false
+			for (const other of allTalents) {
+				if (other.RequiredLevel === s.RequiredLevel && other.Level > 0) {
+					tierOccupied = true
+					break
+				}
+			}
+			if (!tierOccupied && !candidates.includes(s)) {
+				candidates.push(s)
+			}
+		}
+
+		// 6. Любые оставшиеся обычные способности
+		for (const s of spells) {
+			if (!s.IsUltimate && !s.Name.startsWith("special_bonus_") && isLearnable(s) && !candidates.includes(s)) {
+				candidates.push(s)
+			}
+		}
+
+		return candidates
+	}
+
 	private HandleAutoLeveling(hero: Unit, state: UnitState): void {
 		if (hero.AbilityPoints <= 0) {
 			state.failedAbilities.clear()
@@ -526,75 +746,7 @@ new (class JungleFarmScript {
 		}
 		state.lastLeveledAbilityPoints = hero.AbilityPoints
 
-		const spells: Ability[] = []
-		for (const s of hero.Spells) {
-			if (s !== undefined && s !== null) {
-				spells.push(s)
-			}
-		}
-
-		const allTalents: Ability[] = []
-		for (const s of spells) {
-			if (s.Name.startsWith("special_bonus_")) {
-				allTalents.push(s)
-			}
-		}
-
-		// Собираем всех кандидатов в порядке приоритета
-		const candidates: Ability[] = []
-
-		// 1. Ульта (если галочка включена)
-		if (settings.prioritizeUlt.value) {
-			const ultimates = spells.filter(s => s.IsUltimate && s.Level < s.MaxLevel && hero.Level >= s.RequiredLevel)
-			candidates.push(...ultimates)
-		}
-
-		// 2. Выбранные скиллы по порядку
-		const priorityList = [settings.p1.SelectedID, settings.p2.SelectedID, settings.p3.SelectedID, settings.p4.SelectedID]
-		for (const id of priorityList) {
-			let target: Ability | undefined
-			if (id === 3) {
-				for (const s of spells) {
-					if (s.IsUltimate) {
-						target = s
-						break
-					}
-				}
-			} else {
-				target = hero.Spells[id] ?? undefined
-			}
-
-			if (target && target.Level < target.MaxLevel && hero.Level >= target.RequiredLevel && !target.IsNotLearnable) {
-				candidates.push(target)
-			}
-		}
-
-		// 3. Таланты
-		for (const s of allTalents) {
-			if (s.Level >= s.MaxLevel || hero.Level < s.RequiredLevel || s.IsNotLearnable) continue
-			let tierOccupied = false
-			for (const other of allTalents) {
-				if (other.RequiredLevel === s.RequiredLevel && other.Level > 0) {
-					tierOccupied = true
-					break
-				}
-			}
-			if (!tierOccupied) {
-				candidates.push(s)
-			}
-		}
-
-		// 4. Обычные способности (если еще остались)
-		for (const s of spells) {
-			if (!s.IsUltimate &&
-				!s.Name.startsWith("special_bonus_") &&
-				!s.IsNotLearnable &&
-				!s.IsAttributes &&
-				s.Level < s.MaxLevel &&
-				hero.Level >= s.RequiredLevel) {
-				candidates.push(s)
-			}
-		}
+		const candidates = this.GetAutoLevelingCandidates(hero, settings)
 
 		// Ищем первого кандидата, который еще не провалился в текущей сессии прокачки
 		let bestCandidate: Ability | undefined
