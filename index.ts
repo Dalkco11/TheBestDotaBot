@@ -2838,6 +2838,7 @@ new (class JungleFarmScript {
 				}
 				state.targetPos = nearestSpot.pos
 
+				// 1. Проверяем наличие любых нейтральных крипов рядом с героем (в радиусе 900) или на споте (1400)
 				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
 						this.IsNeutralCreep(c) &&
@@ -2847,7 +2848,7 @@ new (class JungleFarmScript {
 						c.IsVisible &&
 						!c.IsPhantom &&
 						!c.IsInvulnerable &&
-						(c.Distance2D(nearestSpot.pos) < 1400 || (hero.Distance2D(nearestSpot.pos) < 1400 && hero.Distance2D(c) < 1000))
+						(hero.Distance2D(c) < 900 || c.Distance2D(nearestSpot.pos) < 1400 || (hero.Distance2D(nearestSpot.pos) < 1400 && hero.Distance2D(c) < 1000))
 				)
 
 				if (neutralsInSpot.length > 0) {
@@ -2856,6 +2857,13 @@ new (class JungleFarmScript {
 					state.lastSpotArrivalTime = 0
 
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
+					
+					// Привязываемся к споту, к которому принадлежат эти крипы
+					const parentSpot = jungleSpots.find(s => s.pos.Distance2D(closestNeutral.Position) < 1400)
+					if (parentSpot && state.currentJungleSpotName !== parentSpot.name) {
+						state.currentJungleSpotName = parentSpot.name
+					}
+
 					const currentTarget = hero.Target
 					let neutral: Creep = closestNeutral
 					if (currentTarget instanceof Creep && currentTarget.IsAlive && currentTarget.IsVisible && this.IsNeutralCreep(currentTarget) && (currentTarget.Distance2D(nearestSpot.pos) < 1400 || hero.Distance2D(currentTarget) < 1000)) {
@@ -3128,14 +3136,21 @@ new (class JungleFarmScript {
 			return null
 		}
 
-		// Если уже выбрали спот и он еще не занят союзником/врагом, продолжаем путь к нему
-		if (state.currentJungleSpotName) {
-			const current = enabledSpots.find(s => s.name === state.currentJungleSpotName)
-			if (current) return current
-		}
-
 		const sorted = enabledSpots.sort((a, b) => hero.Distance2D(a.pos) - hero.Distance2D(b.pos))
 		const nearest = sorted[0]
+
+		// Если уже выбран спот, но появился другой спот, который ближе более чем на 800 единиц (гистерезис):
+		if (state.currentJungleSpotName) {
+			const current = enabledSpots.find(s => s.name === state.currentJungleSpotName)
+			if (current) {
+				const currentDist = hero.Distance2D(current.pos)
+				const nearestDist = hero.Distance2D(nearest.pos)
+				if (currentDist <= nearestDist + 800) {
+					return current
+				}
+			}
+		}
+
 		state.currentJungleSpotName = nearest.name
 		return nearest
 	}
