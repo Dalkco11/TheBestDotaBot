@@ -7,6 +7,8 @@ import {
 	EventsSDK,
 	Fountain,
 	GameState,
+	Input,
+	InputEventSDK,
 	InputManager,
 	LocalPlayer,
 	Menu,
@@ -961,6 +963,12 @@ interface HeroLevelingSettings {
 
 new (class JungleFarmScript {
 	private readonly entry = Menu.AddEntry("Фарм Леса/Линии")
+	private readonly winButtonsNode = this.entry.AddNode("Кнопки победы в чат", "", "Перемещаемые кнопки Radiant Win и Dire win на экране")
+	private readonly showWinButtons = this.winButtonsNode.AddToggle("Показывать кнопки", true, "Отображать перемещаемые кнопки над миникартой")
+	private winButtonsPos: Vector2 | undefined = undefined
+	private isDraggingWinButtons = false
+	private dragOffsetWinButtons = new Vector2(0, 0)
+	private mouseDownPosWinButtons = new Vector2(0, 0)
 	private readonly state = this.entry.AddToggle("Включить скрипт", false, "Общий переключатель работы скрипта")
 	private readonly toggleKey = this.entry.AddKeybind("Клавиша переключения", "7", "Быстрое ВКЛ/ВЫКЛ")
 	private readonly controlAllAllies = this.entry.AddToggle("Контроль всех союзников", false, "Пытаться управлять всеми героями в команде")
@@ -1556,6 +1564,13 @@ new (class JungleFarmScript {
 			this.controlAllAllies.value = !this.controlAllAllies.value
 		})
 
+		try {
+			if (typeof InputEventSDK !== 'undefined') {
+				InputEventSDK.on("MouseKeyDown", this.OnMouseKeyDown.bind(this))
+				InputEventSDK.on("MouseKeyUp", this.OnMouseKeyUp.bind(this))
+			}
+		} catch (e) {}
+
 		EventsSDK.on("Draw", this.OnDraw.bind(this))
 		EventsSDK.on("GameStarted", () => {
 			if (this.forOnik.value) return
@@ -2066,7 +2081,7 @@ new (class JungleFarmScript {
 			RendererSDK.Text(text, new Vector2(posX + 10, posY + 5), Color.Yellow, "Roboto", 16)
 		}
 
-
+		this.DrawWinButtons(screenSize)
 
 		// Original content of OnDraw starts here
 
@@ -2689,6 +2704,156 @@ new (class JungleFarmScript {
 			return (customData.ReliableGold ?? 0) + (customData.UnreliableGold ?? 0)
 		}
 		return -1
+	}
+
+	private GetMousePos(): Vector2 | undefined {
+		try {
+			if (typeof Input !== 'undefined' && Input && Input.CursorOnScreen) {
+				return Input.CursorOnScreen
+			}
+		} catch (e) {}
+		try {
+			if (typeof InputManager !== 'undefined' && InputManager && (InputManager as any).CursorOnScreen) {
+				return (InputManager as any).CursorOnScreen
+			}
+		} catch (e) {}
+		return undefined
+	}
+
+	private OnMouseKeyDown(): boolean {
+		if (this.forOnik.value || !this.showWinButtons.value) return true
+		const mouse = this.GetMousePos()
+		if (!mouse || !this.winButtonsPos) return true
+
+		const btnWidth = 100
+		const btnHeight = 28
+		const gap = 8
+		const totalWidth = btnWidth * 2 + gap + 8
+		const totalHeight = btnHeight + 8
+
+		const panelPos = this.winButtonsPos
+
+		// Check if click is inside the panel
+		if (
+			mouse.x >= panelPos.x &&
+			mouse.x <= panelPos.x + totalWidth &&
+			mouse.y >= panelPos.y &&
+			mouse.y <= panelPos.y + totalHeight
+		) {
+			this.isDraggingWinButtons = true
+			this.mouseDownPosWinButtons = new Vector2(mouse.x, mouse.y)
+			this.dragOffsetWinButtons = new Vector2(mouse.x - panelPos.x, mouse.y - panelPos.y)
+			return false
+		}
+
+		return true
+	}
+
+	private OnMouseKeyUp(): boolean {
+		if (this.isDraggingWinButtons) {
+			const mouse = this.GetMousePos()
+			if (mouse && this.winButtonsPos) {
+				const dx = Math.abs(mouse.x - this.mouseDownPosWinButtons.x)
+				const dy = Math.abs(mouse.y - this.mouseDownPosWinButtons.y)
+
+				// If moved less than 6px, it is a click!
+				if (dx < 6 && dy < 6) {
+					const btnWidth = 100
+					const btnHeight = 28
+					const panelPos = this.winButtonsPos
+
+					const rBtnPos = new Vector2(panelPos.x + 4, panelPos.y + 4)
+					const dBtnPos = new Vector2(panelPos.x + 4 + btnWidth + 8, panelPos.y + 4)
+
+					if (
+						mouse.x >= rBtnPos.x &&
+						mouse.x <= rBtnPos.x + btnWidth &&
+						mouse.y >= rBtnPos.y &&
+						mouse.y <= rBtnPos.y + btnHeight
+					) {
+						this.SafeExecuteCommand('say "Radiant Win"')
+						this.Log("Чат: Radiant Win")
+					} else if (
+						mouse.x >= dBtnPos.x &&
+						mouse.x <= dBtnPos.x + btnWidth &&
+						mouse.y >= dBtnPos.y &&
+						mouse.y <= dBtnPos.y + btnHeight
+					) {
+						this.SafeExecuteCommand('say "Dire win"')
+						this.Log("Чат: Dire win")
+					}
+				}
+			}
+			this.isDraggingWinButtons = false
+			return false
+		}
+		return true
+	}
+
+	private DrawWinButtons(screenSize: Vector2): void {
+		if (!this.showWinButtons.value) return
+
+		if (!this.winButtonsPos) {
+			this.winButtonsPos = new Vector2(25, Math.max(100, screenSize.y - 340))
+		}
+
+		if (this.isDraggingWinButtons) {
+			const mouse = this.GetMousePos()
+			if (mouse) {
+				const newX = Math.max(0, Math.min(screenSize.x - 220, mouse.x - this.dragOffsetWinButtons.x))
+				const newY = Math.max(0, Math.min(screenSize.y - 45, mouse.y - this.dragOffsetWinButtons.y))
+				this.winButtonsPos = new Vector2(newX, newY)
+			}
+		}
+
+		const panelPos = this.winButtonsPos
+		const btnWidth = 100
+		const btnHeight = 28
+		const gap = 8
+		const totalWidth = btnWidth * 2 + gap + 8
+		const totalHeight = btnHeight + 8
+
+		// Panel background
+		RendererSDK.FilledRect(panelPos, new Vector2(totalWidth, totalHeight), new Color(15, 18, 26, 210), 6)
+		RendererSDK.OutlinedRect(panelPos, new Vector2(totalWidth, totalHeight), 1, new Color(255, 255, 255, 40), 6)
+
+		const mouse = this.GetMousePos()
+
+		// 1. Radiant Win Button
+		const rBtnPos = new Vector2(panelPos.x + 4, panelPos.y + 4)
+		const isHoverR = mouse ? (mouse.x >= rBtnPos.x && mouse.x <= rBtnPos.x + btnWidth && mouse.y >= rBtnPos.y && mouse.y <= rBtnPos.y + btnHeight) : false
+		const rBgColor = isHoverR ? new Color(34, 145, 40, 250) : new Color(22, 100, 30, 220)
+		const rBorderColor = isHoverR ? new Color(120, 255, 120, 255) : new Color(60, 200, 60, 180)
+
+		RendererSDK.FilledRect(rBtnPos, new Vector2(btnWidth, btnHeight), rBgColor, 4)
+		RendererSDK.OutlinedRect(rBtnPos, new Vector2(btnWidth, btnHeight), 1, rBorderColor, 4)
+
+		const rText = "Radiant Win"
+		const rTextSize = RendererSDK.GetTextSize(rText, "Roboto", 13, 700)
+		const rTextDrawPos = new Vector2(
+			rBtnPos.x + (btnWidth - rTextSize.x) / 2,
+			rBtnPos.y + (btnHeight - rTextSize.y) / 2
+		)
+		RendererSDK.Text(rText, rTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 13, 700)
+		RendererSDK.Text(rText, rTextDrawPos, Color.White, "Roboto", 13, 700)
+
+		// 2. Dire Win Button
+		const dBtnPos = new Vector2(panelPos.x + 4 + btnWidth + gap, panelPos.y + 4)
+		const isHoverD = mouse ? (mouse.x >= dBtnPos.x && mouse.x <= dBtnPos.x + btnWidth && mouse.y >= dBtnPos.y && mouse.y <= dBtnPos.y + btnHeight) : false
+		const dBgColor = isHoverD ? new Color(185, 30, 30, 250) : new Color(135, 20, 20, 220)
+		const dBorderColor = isHoverD ? new Color(255, 120, 120, 255) : new Color(220, 50, 50, 180)
+
+		RendererSDK.FilledRect(dBtnPos, new Vector2(btnWidth, btnHeight), dBgColor, 4)
+		RendererSDK.OutlinedRect(dBtnPos, new Vector2(btnWidth, btnHeight), 1, dBorderColor, 4)
+
+		const dText = "Dire win"
+		const dTextSize = RendererSDK.GetTextSize(dText, "Roboto", 13, 700)
+		const dTextDrawPos = new Vector2(
+			dBtnPos.x + (btnWidth - dTextSize.x) / 2,
+			dBtnPos.y + (btnHeight - dTextSize.y) / 2
+		)
+		RendererSDK.Text(dText, dTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 13, 700)
+		RendererSDK.Text(dText, dTextDrawPos, Color.White, "Roboto", 13, 700)
 	}
 
 	private GetItemId(itemName: string): number {
