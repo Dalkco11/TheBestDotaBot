@@ -1060,19 +1060,6 @@ new (class JungleFarmScript {
 
 	private readonly shopNode = this.autoNode.AddNode("Авто-покупка", "", "Настройки автоматической покупки предметов")
 	private readonly autoBuyItems = this.shopNode.AddToggle("Включить авто-покупку", true, "Автоматически покупать предметы по очереди")
-	private readonly buyMode = this.shopNode.AddDropdown("Режим закупки", [
-		"Иконки предметов (Drag & Drop / Поиск)",
-		"По слотам (01-12)",
-		"Только дефолт (Топор -> Брейсер -> Фейзы -> МОМ -> Яша)"
-	], 0, "Выберите способ настройки очереди: иконками с Drag & Drop и поиском, по слотам 01-12 или только дефолт")
-
-	private readonly imageSelector = this.shopNode.AddImageSelector(
-		"Очередь покупки (Иконки)",
-		ALL_ITEM_KEYS,
-		DEFAULT_BUILD_DICT
-	)
-
-	private readonly customSlotsNode = this.shopNode.AddNode("Очередь по слотам (01-12)", "", "Альтернативная настройка по слотам")
 	private readonly buySlots: Menu.Dropdown[] = []
 
 
@@ -1555,7 +1542,7 @@ new (class JungleFarmScript {
 			else if (i === 5) defaultIndex = 5 // Яша
 
 			this.buySlots.push(
-				this.customSlotsNode.AddDropdown(`${slotNumStr}. Слот`, ITEM_NAMES, defaultIndex, `Предмет #${i} в очереди покупки`)
+				this.shopNode.AddDropdown(`${slotNumStr}. Предмет`, ITEM_NAMES, defaultIndex, `Предмет #${i} в очереди покупки`)
 			)
 		}
 
@@ -2712,98 +2699,17 @@ new (class JungleFarmScript {
 		return -1
 	}
 
-	private GetItemsFromImageSelector(selector: any): string[] {
-		if (!selector) return []
-
-		if (Array.isArray(selector.value)) {
-			return selector.value
-		}
-		if (Array.isArray(selector.SelectedValues)) {
-			return selector.SelectedValues
-		}
-		if (Array.isArray(selector.Items)) {
-			return selector.Items.filter((it: any) => typeof it === "string" ? (selector.IsEnabled?.(it) ?? true) : it?.value)
-		}
-		if (Array.isArray(selector.Values)) {
-			return selector.Values.filter((it: any) => typeof it === "string" ? (selector.IsEnabled?.(it) ?? true) : it?.value)
-		}
-
-		if (selector.values instanceof Map) {
-			const result: string[] = []
-			for (const [key, enabled] of selector.values) {
-				if (enabled) result.push(key)
-			}
-			return result
-		}
-		if (selector.value instanceof Map) {
-			const result: string[] = []
-			for (const [key, enabled] of selector.value) {
-				if (enabled) result.push(key)
-			}
-			return result
-		}
-
-		if (selector.values && typeof selector.values === "object") {
-			const result: string[] = []
-			for (const [key, enabled] of Object.entries(selector.values)) {
-				if (enabled) result.push(key)
-			}
-			return result
-		}
-		if (selector.value && typeof selector.value === "object") {
-			const result: string[] = []
-			for (const [key, enabled] of Object.entries(selector.value)) {
-				if (enabled) result.push(key)
-			}
-			return result
-		}
-
-		if (typeof selector.IsEnabled === "function") {
-			const result: string[] = []
-			for (const key of ALL_ITEM_KEYS) {
-				if (selector.IsEnabled(key)) {
-					result.push(key)
-				}
-			}
-			return result
-		}
-
-		return []
-	}
-
 	private GetActiveItemBuild(): ItemBuildStep[] {
-		// 1. Режим: Только дефолт
-		if (this.buyMode.SelectedID === 2) {
-			return DEFAULT_BUILD_STEPS
-		}
-
-		// 2. Режим: По слотам (01-12)
-		if (this.buyMode.SelectedID === 1) {
-			const build: ItemBuildStep[] = []
-			for (const slot of this.buySlots) {
-				const selIndex = slot.SelectedID
-				const option = ITEM_OPTIONS[selIndex]
-				if (option && option.step) {
-					build.push(option.step)
-				}
+		const build: ItemBuildStep[] = []
+		for (const slot of this.buySlots) {
+			const selIndex = slot.SelectedID
+			const option = ITEM_OPTIONS[selIndex]
+			if (option && option.step) {
+				build.push(option.step)
 			}
-			return build.length > 0 ? build : DEFAULT_BUILD_STEPS
 		}
 
-		// 3. Режим: Иконки (ImageSelector - Drag & Drop / Поиск)
-		const selectedKeys = this.GetItemsFromImageSelector(this.imageSelector)
-		if (selectedKeys.length > 0) {
-			const build: ItemBuildStep[] = []
-			for (const key of selectedKeys) {
-				const step = ITEM_CATALOG.get(key)
-				if (step) {
-					build.push(step)
-				}
-			}
-			if (build.length > 0) return build
-		}
-
-		return DEFAULT_BUILD_STEPS
+		return build.length > 0 ? build : DEFAULT_BUILD_STEPS
 	}
 
 	private HandleAutoBuyItems(hero: Unit, state: UnitState): void {
