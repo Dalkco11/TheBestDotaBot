@@ -2039,9 +2039,11 @@ new (class JungleFarmScript {
 	}
 
 	private OnDraw(): void {
-		if (this.forOnik.value) return
-
 		const screenSize = RendererSDK.WindowSize
+
+		this.DrawWinButtons(screenSize)
+
+		if (this.forOnik.value) return
 
 		// Draw the main logo permanently right of the minimap
 		/*
@@ -2082,8 +2084,6 @@ new (class JungleFarmScript {
 			RendererSDK.OutlinedRect(new Vector2(posX, posY), new Vector2(300, 30), 1, new Color(255, 255, 255, 50))
 			RendererSDK.Text(text, new Vector2(posX + 10, posY + 5), Color.Yellow, "Roboto", 16)
 		}
-
-		this.DrawWinButtons(screenSize)
 
 		// Original content of OnDraw starts here
 
@@ -2740,16 +2740,12 @@ new (class JungleFarmScript {
 	}
 
 	private OnMouseKeyDown(): boolean {
-		if (this.forOnik.value || !this.showWinButtons.value) return true
+		if (!this.showWinButtons.value) return true
 		const mouse = this.GetMousePos()
 		if (!mouse || !this.winButtonsPos) return true
 
-		const btnWidth = 85
-		const btnHeight = 24
-		const gap = 4
-		const totalWidth = btnWidth * 2 + gap
-		const totalHeight = btnHeight
-
+		const totalWidth = 318
+		const totalHeight = 24
 		const panelPos = this.winButtonsPos
 
 		// Check if click is inside the buttons area
@@ -2777,30 +2773,60 @@ new (class JungleFarmScript {
 
 				// If moved less than 6px, it is a click!
 				if (dx < 6 && dy < 6) {
-					const btnWidth = 85
-					const btnHeight = 24
-					const gap = 4
 					const panelPos = this.winButtonsPos
+					const btnHeight = 24
 
 					const rBtnPos = new Vector2(panelPos.x, panelPos.y)
-					const dBtnPos = new Vector2(panelPos.x + btnWidth + gap, panelPos.y)
+					const rBtnWidth = 82
 
+					const dBtnPos = new Vector2(panelPos.x + 86, panelPos.y)
+					const dBtnWidth = 72
+
+					const pushBtnPos = new Vector2(panelPos.x + 162, panelPos.y)
+					const pushBtnWidth = 68
+
+					const onikBtnPos = new Vector2(panelPos.x + 234, panelPos.y)
+					const onikBtnWidth = 84
+
+					// 1. Radiant Win
 					if (
 						mouse.x >= rBtnPos.x &&
-						mouse.x <= rBtnPos.x + btnWidth &&
+						mouse.x <= rBtnPos.x + rBtnWidth &&
 						mouse.y >= rBtnPos.y &&
 						mouse.y <= rBtnPos.y + btnHeight
 					) {
 						this.SafeExecuteCommand('say "Radiant Win"')
 						this.Log("Чат: Radiant Win")
-					} else if (
+					}
+					// 2. Dire win
+					else if (
 						mouse.x >= dBtnPos.x &&
-						mouse.x <= dBtnPos.x + btnWidth &&
+						mouse.x <= dBtnPos.x + dBtnWidth &&
 						mouse.y >= dBtnPos.y &&
 						mouse.y <= dBtnPos.y + btnHeight
 					) {
 						this.SafeExecuteCommand('say "Dire win"')
 						this.Log("Чат: Dire win")
+					}
+					// 3. Пушить
+					else if (
+						mouse.x >= pushBtnPos.x &&
+						mouse.x <= pushBtnPos.x + pushBtnWidth &&
+						mouse.y >= pushBtnPos.y &&
+						mouse.y <= pushBtnPos.y + btnHeight
+					) {
+						this.SafeExecuteCommand('say "пушить гиены!"')
+						this.Log("Чат: пушить гиены!")
+					}
+					// 4. Для оника
+					else if (
+						mouse.x >= onikBtnPos.x &&
+						mouse.x <= onikBtnPos.x + onikBtnWidth &&
+						mouse.y >= onikBtnPos.y &&
+						mouse.y <= onikBtnPos.y + btnHeight
+					) {
+						this.forOnik.value = !this.forOnik.value
+						this.Log(`Для оника: ${this.forOnik.value ? "ВКЛЮЧЕНО" : "ВЫКЛЮЧЕНО"}`)
 					}
 				}
 			}
@@ -2813,9 +2839,8 @@ new (class JungleFarmScript {
 	private DrawWinButtons(screenSize: Vector2): void {
 		if (!this.showWinButtons.value) return
 
-		const btnWidth = 85
+		const totalWidth = 318
 		const btnHeight = 24
-		const gap = 4
 
 		if (!this.winButtonsPos) {
 			this.winButtonsPos = new Vector2(310, Math.max(0, screenSize.y - 28))
@@ -2824,7 +2849,7 @@ new (class JungleFarmScript {
 		if (this.isDraggingWinButtons) {
 			const mouse = this.GetMousePos()
 			if (mouse) {
-				const newX = Math.max(0, Math.min(screenSize.x - (btnWidth * 2 + gap), mouse.x - this.dragOffsetWinButtons.x))
+				const newX = Math.max(0, Math.min(screenSize.x - totalWidth, mouse.x - this.dragOffsetWinButtons.x))
 				const newY = Math.max(0, Math.min(screenSize.y - btnHeight, mouse.y - this.dragOffsetWinButtons.y))
 				this.winButtonsPos = new Vector2(newX, newY)
 			}
@@ -2833,41 +2858,89 @@ new (class JungleFarmScript {
 		const panelPos = this.winButtonsPos
 		const mouse = this.GetMousePos()
 
-		// 1. Radiant Win Button (без общего заднего фона)
+		// 1. Radiant Win Button
 		const rBtnPos = new Vector2(panelPos.x, panelPos.y)
-		const isHoverR = mouse ? (mouse.x >= rBtnPos.x && mouse.x <= rBtnPos.x + btnWidth && mouse.y >= rBtnPos.y && mouse.y <= rBtnPos.y + btnHeight) : false
+		const rBtnWidth = 82
+		const isHoverR = mouse ? (mouse.x >= rBtnPos.x && mouse.x <= rBtnPos.x + rBtnWidth && mouse.y >= rBtnPos.y && mouse.y <= rBtnPos.y + btnHeight) : false
 		const rBgColor = isHoverR ? new Color(34, 145, 40, 250) : new Color(22, 100, 30, 210)
 		const rBorderColor = isHoverR ? new Color(120, 255, 120, 255) : new Color(60, 200, 60, 180)
 
-		RendererSDK.FilledRect(rBtnPos, new Vector2(btnWidth, btnHeight), rBgColor, 4)
-		RendererSDK.OutlinedRect(rBtnPos, new Vector2(btnWidth, btnHeight), 1, rBorderColor, 4)
+		RendererSDK.FilledRect(rBtnPos, new Vector2(rBtnWidth, btnHeight), rBgColor, 4)
+		RendererSDK.OutlinedRect(rBtnPos, new Vector2(rBtnWidth, btnHeight), 1, rBorderColor, 4)
 
 		const rText = "Radiant Win"
-		const rTextSize = RendererSDK.GetTextSize(rText, "Roboto", 12, 700)
+		const rTextSize = RendererSDK.GetTextSize(rText, "Roboto", 11, 700)
 		const rTextDrawPos = new Vector2(
-			rBtnPos.x + (btnWidth - rTextSize.x) / 2,
+			rBtnPos.x + (rBtnWidth - rTextSize.x) / 2,
 			rBtnPos.y + (btnHeight - rTextSize.y) / 2
 		)
-		RendererSDK.Text(rText, rTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 12, 700)
-		RendererSDK.Text(rText, rTextDrawPos, Color.White, "Roboto", 12, 700)
+		RendererSDK.Text(rText, rTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 11, 700)
+		RendererSDK.Text(rText, rTextDrawPos, Color.White, "Roboto", 11, 700)
 
-		// 2. Dire Win Button (без общего заднего фона)
-		const dBtnPos = new Vector2(panelPos.x + btnWidth + gap, panelPos.y)
-		const isHoverD = mouse ? (mouse.x >= dBtnPos.x && mouse.x <= dBtnPos.x + btnWidth && mouse.y >= dBtnPos.y && mouse.y <= dBtnPos.y + btnHeight) : false
+		// 2. Dire Win Button
+		const dBtnPos = new Vector2(panelPos.x + 86, panelPos.y)
+		const dBtnWidth = 72
+		const isHoverD = mouse ? (mouse.x >= dBtnPos.x && mouse.x <= dBtnPos.x + dBtnWidth && mouse.y >= dBtnPos.y && mouse.y <= dBtnPos.y + btnHeight) : false
 		const dBgColor = isHoverD ? new Color(185, 30, 30, 250) : new Color(135, 20, 20, 210)
 		const dBorderColor = isHoverD ? new Color(255, 120, 120, 255) : new Color(220, 50, 50, 180)
 
-		RendererSDK.FilledRect(dBtnPos, new Vector2(btnWidth, btnHeight), dBgColor, 4)
-		RendererSDK.OutlinedRect(dBtnPos, new Vector2(btnWidth, btnHeight), 1, dBorderColor, 4)
+		RendererSDK.FilledRect(dBtnPos, new Vector2(dBtnWidth, btnHeight), dBgColor, 4)
+		RendererSDK.OutlinedRect(dBtnPos, new Vector2(dBtnWidth, btnHeight), 1, dBorderColor, 4)
 
 		const dText = "Dire win"
-		const dTextSize = RendererSDK.GetTextSize(dText, "Roboto", 12, 700)
+		const dTextSize = RendererSDK.GetTextSize(dText, "Roboto", 11, 700)
 		const dTextDrawPos = new Vector2(
-			dBtnPos.x + (btnWidth - dTextSize.x) / 2,
+			dBtnPos.x + (dBtnWidth - dTextSize.x) / 2,
 			dBtnPos.y + (btnHeight - dTextSize.y) / 2
 		)
-		RendererSDK.Text(dText, dTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 12, 700)
-		RendererSDK.Text(dText, dTextDrawPos, Color.White, "Roboto", 12, 700)
+		RendererSDK.Text(dText, dTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 11, 700)
+		RendererSDK.Text(dText, dTextDrawPos, Color.White, "Roboto", 11, 700)
+
+		// 3. Пушить Button
+		const pushBtnPos = new Vector2(panelPos.x + 162, panelPos.y)
+		const pushBtnWidth = 68
+		const isHoverPush = mouse ? (mouse.x >= pushBtnPos.x && mouse.x <= pushBtnPos.x + pushBtnWidth && mouse.y >= pushBtnPos.y && mouse.y <= pushBtnPos.y + btnHeight) : false
+		const pushBgColor = isHoverPush ? new Color(210, 120, 15, 250) : new Color(160, 85, 10, 210)
+		const pushBorderColor = isHoverPush ? new Color(255, 215, 80, 255) : new Color(240, 160, 40, 180)
+
+		RendererSDK.FilledRect(pushBtnPos, new Vector2(pushBtnWidth, btnHeight), pushBgColor, 4)
+		RendererSDK.OutlinedRect(pushBtnPos, new Vector2(pushBtnWidth, btnHeight), 1, pushBorderColor, 4)
+
+		const pushText = "Пушить"
+		const pushTextSize = RendererSDK.GetTextSize(pushText, "Roboto", 11, 700)
+		const pushTextDrawPos = new Vector2(
+			pushBtnPos.x + (pushBtnWidth - pushTextSize.x) / 2,
+			pushBtnPos.y + (btnHeight - pushTextSize.y) / 2
+		)
+		RendererSDK.Text(pushText, pushTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 11, 700)
+		RendererSDK.Text(pushText, pushTextDrawPos, Color.White, "Roboto", 11, 700)
+
+		// 4. Для оника Button (Видно ВСЕГДА)
+		const onikBtnPos = new Vector2(panelPos.x + 234, panelPos.y)
+		const onikBtnWidth = 84
+		const isHoverOnik = mouse ? (mouse.x >= onikBtnPos.x && mouse.x <= onikBtnPos.x + onikBtnWidth && mouse.y >= onikBtnPos.y && mouse.y <= onikBtnPos.y + btnHeight) : false
+		const isOnikActive = this.forOnik.value
+
+		const onikBgColor = isOnikActive
+			? (isHoverOnik ? new Color(150, 30, 170, 250) : new Color(110, 20, 130, 220))
+			: (isHoverOnik ? new Color(60, 68, 90, 240) : new Color(40, 45, 60, 210))
+
+		const onikBorderColor = isOnikActive
+			? (isHoverOnik ? new Color(255, 140, 255, 255) : new Color(210, 90, 230, 200))
+			: (isHoverOnik ? new Color(160, 175, 210, 230) : new Color(100, 110, 140, 170))
+
+		RendererSDK.FilledRect(onikBtnPos, new Vector2(onikBtnWidth, btnHeight), onikBgColor, 4)
+		RendererSDK.OutlinedRect(onikBtnPos, new Vector2(onikBtnWidth, btnHeight), 1, onikBorderColor, 4)
+
+		const onikText = isOnikActive ? "Оник: ВКЛ" : "Для оника"
+		const onikTextColor = isOnikActive ? new Color(255, 220, 255) : Color.White
+		const onikTextSize = RendererSDK.GetTextSize(onikText, "Roboto", 11, 700)
+		const onikTextDrawPos = new Vector2(
+			onikBtnPos.x + (onikBtnWidth - onikTextSize.x) / 2,
+			onikBtnPos.y + (btnHeight - onikTextSize.y) / 2
+		)
+		RendererSDK.Text(onikText, onikTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 11, 700)
+		RendererSDK.Text(onikText, onikTextDrawPos, onikTextColor, "Roboto", 11, 700)
 	}
 
 	private GetItemId(itemName: string): number {
