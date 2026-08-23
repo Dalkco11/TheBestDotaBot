@@ -84,58 +84,751 @@ interface UnitState {
 	lastXpChangeTime?: number
 }
 
+interface ItemComponent {
+	name: string
+	subComponents?: string[]
+}
+
 interface ItemBuildStep {
 	name: string
 	displayName: string
 	altNames?: string[]
-	components: { name: string }[]
+	components: ItemComponent[]
 }
 
-const autoBuyBuild: ItemBuildStep[] = [
+const ITEM_OPTIONS: { id: string; name: string; step?: ItemBuildStep }[] = [
+	{ id: "none", name: "[ Отключен / Пусто ]" },
 	{
-		name: "item_quelling_blade",
-		displayName: "Топор",
-		components: [
-			{ name: "item_quelling_blade" }
-		]
+		id: "item_quelling_blade",
+		name: "Топор (Quelling Blade)",
+		step: {
+			name: "item_quelling_blade",
+			displayName: "Топор",
+			components: [{ name: "item_quelling_blade" }]
+		}
 	},
 	{
-		name: "item_bracer",
-		displayName: "Брейсер",
-		components: [
-			{ name: "item_circlet" },
-			{ name: "item_gauntlets" },
-			{ name: "item_recipe_bracer" }
-		]
+		id: "item_bracer",
+		name: "Брейсер (Bracer)",
+		step: {
+			name: "item_bracer",
+			displayName: "Брейсер",
+			components: [
+				{ name: "item_circlet" },
+				{ name: "item_gauntlets" },
+				{ name: "item_recipe_bracer" }
+			]
+		}
 	},
 	{
-		name: "item_phase_boots",
-		displayName: "Фейзы",
-		components: [
-			{ name: "item_boots" },
-			{ name: "item_blades_of_attack" },
-			{ name: "item_chainmail" }
-		]
+		id: "item_phase_boots",
+		name: "Фейзы (Phase Boots)",
+		step: {
+			name: "item_phase_boots",
+			displayName: "Фейзы",
+			components: [
+				{ name: "item_boots" },
+				{ name: "item_blades_of_attack" },
+				{ name: "item_chainmail" }
+			]
+		}
 	},
 	{
-		name: "item_mask_of_madness",
-		displayName: "МОМ",
-		components: [
-			{ name: "item_lifesteal" },
-			{ name: "item_broadsword" }
-		]
+		id: "item_mask_of_madness",
+		name: "МОМ (Mask of Madness)",
+		step: {
+			name: "item_mask_of_madness",
+			displayName: "МОМ",
+			components: [
+				{ name: "item_lifesteal" },
+				{ name: "item_broadsword" }
+			]
+		}
 	},
 	{
-		name: "item_yasha",
-		displayName: "Яша",
-		altNames: ["item_yasha", "item_sange_and_yasha", "item_yasha_and_kaya"],
-		components: [
-			{ name: "item_blade_of_alacrity" },
-			{ name: "item_boots_of_elves" },
-			{ name: "item_recipe_yasha" }
-		]
+		id: "item_yasha",
+		name: "Яша (Yasha)",
+		step: {
+			name: "item_yasha",
+			displayName: "Яша",
+			altNames: ["item_yasha", "item_sange_and_yasha", "item_yasha_and_kaya", "item_manta"],
+			components: [
+				{ name: "item_blade_of_alacrity" },
+				{ name: "item_boots_of_elves" },
+				{ name: "item_recipe_yasha" }
+			]
+		}
+	},
+	{
+		id: "item_power_treads",
+		name: "ПТ (Power Treads)",
+		step: {
+			name: "item_power_treads",
+			displayName: "ПТ",
+			components: [
+				{ name: "item_boots" },
+				{ name: "item_gloves" },
+				{ name: "item_belt_of_strength" }
+			]
+		}
+	},
+	{
+		id: "item_wraith_band",
+		name: "Врейс Бэнд (Wraith Band)",
+		step: {
+			name: "item_wraith_band",
+			displayName: "Врейс Бэнд",
+			components: [
+				{ name: "item_circlet" },
+				{ name: "item_slippers" },
+				{ name: "item_recipe_wraith_band" }
+			]
+		}
+	},
+	{
+		id: "item_null_talisman",
+		name: "Нулл Талисман (Null Talisman)",
+		step: {
+			name: "item_null_talisman",
+			displayName: "Нулл Талисман",
+			components: [
+				{ name: "item_circlet" },
+				{ name: "item_mantle" },
+				{ name: "item_recipe_null_talisman" }
+			]
+		}
+	},
+	{
+		id: "item_magic_wand",
+		name: "Стики (Magic Wand)",
+		step: {
+			name: "item_magic_wand",
+			displayName: "Стики",
+			components: [
+				{ name: "item_magic_stick" },
+				{ name: "item_branches" },
+				{ name: "item_branches" },
+				{ name: "item_recipe_magic_wand" }
+			]
+		}
+	},
+	{
+		id: "item_boots",
+		name: "Сапог (Boots of Speed)",
+		step: {
+			name: "item_boots",
+			displayName: "Сапог",
+			components: [{ name: "item_boots" }]
+		}
+	},
+	{
+		id: "item_arcane_boots",
+		name: "Арканы (Arcane Boots)",
+		step: {
+			name: "item_arcane_boots",
+			displayName: "Арканы",
+			components: [
+				{ name: "item_boots" },
+				{ name: "item_energy_booster" }
+			]
+		}
+	},
+	{
+		id: "item_travel_boots",
+		name: "Трэвела (Boots of Travel)",
+		step: {
+			name: "item_travel_boots",
+			displayName: "Трэвела",
+			altNames: ["item_travel_boots", "item_travel_boots_2"],
+			components: [
+				{ name: "item_boots" },
+				{ name: "item_recipe_travel_boots" }
+			]
+		}
+	},
+	{
+		id: "item_tranquil_boots",
+		name: "Транквилы (Tranquil Boots)",
+		step: {
+			name: "item_tranquil_boots",
+			displayName: "Транквилы",
+			altNames: ["item_tranquil_boots", "item_boots_of_bearing"],
+			components: [
+				{ name: "item_boots" },
+				{ name: "item_wind_lace" },
+				{ name: "item_ring_of_regen" }
+			]
+		}
+	},
+	{
+		id: "item_vanguard",
+		name: "Вангард (Vanguard)",
+		step: {
+			name: "item_vanguard",
+			displayName: "Вангард",
+			altNames: ["item_vanguard", "item_crimson_guard", "item_abyssal_blade"],
+			components: [
+				{ name: "item_ring_of_health" },
+				{ name: "item_vitality_booster" }
+			]
+		}
+	},
+	{
+		id: "item_blade_mail",
+		name: "Блейд Мейл (Blade Mail)",
+		step: {
+			name: "item_blade_mail",
+			displayName: "Блейд Мейл",
+			components: [
+				{ name: "item_broadsword" },
+				{ name: "item_chainmail" },
+				{ name: "item_recipe_blade_mail" }
+			]
+		}
+	},
+	{
+		id: "item_sange",
+		name: "Санж (Sange)",
+		step: {
+			name: "item_sange",
+			displayName: "Санж",
+			altNames: ["item_sange", "item_sange_and_yasha", "item_kaya_and_sange", "item_heavens_halberd"],
+			components: [
+				{ name: "item_ogre_axe" },
+				{ name: "item_belt_of_strength" },
+				{ name: "item_recipe_sange" }
+			]
+		}
+	},
+	{
+		id: "item_sange_and_yasha",
+		name: "Саша и Яша (Sange & Yasha)",
+		step: {
+			name: "item_sange_and_yasha",
+			displayName: "Саша и Яша",
+			components: [
+				{ name: "item_sange", subComponents: ["item_ogre_axe", "item_belt_of_strength", "item_recipe_sange"] },
+				{ name: "item_yasha", subComponents: ["item_blade_of_alacrity", "item_boots_of_elves", "item_recipe_yasha"] }
+			]
+		}
+	},
+	{
+		id: "item_black_king_bar",
+		name: "БКБ (Black King Bar)",
+		step: {
+			name: "item_black_king_bar",
+			displayName: "БКБ",
+			components: [
+				{ name: "item_ogre_axe" },
+				{ name: "item_mithril_hammer" },
+				{ name: "item_recipe_black_king_bar" }
+			]
+		}
+	},
+	{
+		id: "item_desolator",
+		name: "Дезолятор (Desolator)",
+		step: {
+			name: "item_desolator",
+			displayName: "Дезолятор",
+			components: [
+				{ name: "item_mithril_hammer" },
+				{ name: "item_mithril_hammer" },
+				{ name: "item_blight_stone" }
+			]
+		}
+	},
+	{
+		id: "item_basher",
+		name: "Башер (Skull Basher)",
+		step: {
+			name: "item_basher",
+			displayName: "Башер",
+			altNames: ["item_basher", "item_abyssal_blade"],
+			components: [
+				{ name: "item_mithril_hammer" },
+				{ name: "item_belt_of_strength" },
+				{ name: "item_recipe_basher" }
+			]
+		}
+	},
+	{
+		id: "item_abyssal_blade",
+		name: "Абиссал (Abyssal Blade)",
+		step: {
+			name: "item_abyssal_blade",
+			displayName: "Абиссал",
+			components: [
+				{ name: "item_basher", subComponents: ["item_mithril_hammer", "item_belt_of_strength", "item_recipe_basher"] },
+				{ name: "item_vanguard", subComponents: ["item_ring_of_health", "item_vitality_booster"] },
+				{ name: "item_recipe_abyssal_blade" }
+			]
+		}
+	},
+	{
+		id: "item_maelstrom",
+		name: "Маелстром (Maelstrom)",
+		step: {
+			name: "item_maelstrom",
+			displayName: "Маелстром",
+			altNames: ["item_maelstrom", "item_mjollnir", "item_gleipnir"],
+			components: [
+				{ name: "item_mithril_hammer" },
+				{ name: "item_javelin" },
+				{ name: "item_recipe_maelstrom" }
+			]
+		}
+	},
+	{
+		id: "item_mjollnir",
+		name: "Мьёллнир (Mjollnir)",
+		step: {
+			name: "item_mjollnir",
+			displayName: "Мьёллнир",
+			components: [
+				{ name: "item_maelstrom", subComponents: ["item_mithril_hammer", "item_javelin", "item_recipe_maelstrom"] },
+				{ name: "item_hyperstone" },
+				{ name: "item_recipe_mjollnir" }
+			]
+		}
+	},
+	{
+		id: "item_butterfly",
+		name: "Бабочка (Butterfly)",
+		step: {
+			name: "item_butterfly",
+			displayName: "Бабочка",
+			components: [
+				{ name: "item_eagle" },
+				{ name: "item_talisman_of_evasion" },
+				{ name: "item_claymore" }
+			]
+		}
+	},
+	{
+		id: "item_greater_crit",
+		name: "Даедалус (Daedalus)",
+		step: {
+			name: "item_greater_crit",
+			displayName: "Даедалус",
+			components: [
+				{ name: "item_lesser_crit", subComponents: ["item_broadsword", "item_blades_of_attack", "item_recipe_lesser_crit"] },
+				{ name: "item_demon_edge" },
+				{ name: "item_recipe_greater_crit" }
+			]
+		}
+	},
+	{
+		id: "item_lesser_crit",
+		name: "Кристалис (Crystalys)",
+		step: {
+			name: "item_lesser_crit",
+			displayName: "Кристалис",
+			altNames: ["item_lesser_crit", "item_greater_crit", "item_silver_edge", "item_khanda"],
+			components: [
+				{ name: "item_broadsword" },
+				{ name: "item_blades_of_attack" },
+				{ name: "item_recipe_lesser_crit" }
+			]
+		}
+	},
+	{
+		id: "item_satanic",
+		name: "Сатаник (Satanic)",
+		step: {
+			name: "item_satanic",
+			displayName: "Сатаник",
+			components: [
+				{ name: "item_lifesteal" },
+				{ name: "item_claymore" },
+				{ name: "item_reaver" }
+			]
+		}
+	},
+	{
+		id: "item_manta",
+		name: "Манта (Manta Style)",
+		step: {
+			name: "item_manta",
+			displayName: "Манта",
+			components: [
+				{ name: "item_yasha", subComponents: ["item_blade_of_alacrity", "item_boots_of_elves", "item_recipe_yasha"] },
+				{ name: "item_ultimate_orb" },
+				{ name: "item_recipe_manta" }
+			]
+		}
+	},
+	{
+		id: "item_blink",
+		name: "Блинк (Blink Dagger)",
+		step: {
+			name: "item_blink",
+			displayName: "Блинк",
+			altNames: ["item_blink", "item_overwhelming_blink", "item_swift_blink", "item_arcane_blink"],
+			components: [{ name: "item_blink" }]
+		}
+	},
+	{
+		id: "item_invis_sword",
+		name: "Шадоу Блейд / Лотар (Shadow Blade)",
+		step: {
+			name: "item_invis_sword",
+			displayName: "Шадоу Блейд",
+			altNames: ["item_invis_sword", "item_silver_edge"],
+			components: [
+				{ name: "item_shadow_amulet" },
+				{ name: "item_blitz_knuckles" },
+				{ name: "item_broadsword" }
+			]
+		}
+	},
+	{
+		id: "item_silver_edge",
+		name: "Сильвер Эдж (Silver Edge)",
+		step: {
+			name: "item_silver_edge",
+			displayName: "Сильвер Эдж",
+			components: [
+				{ name: "item_invis_sword", subComponents: ["item_shadow_amulet", "item_blitz_knuckles", "item_broadsword"] },
+				{ name: "item_lesser_crit", subComponents: ["item_broadsword", "item_blades_of_attack", "item_recipe_lesser_crit"] },
+				{ name: "item_recipe_silver_edge" }
+			]
+		}
+	},
+	{
+		id: "item_diffusal_blade",
+		name: "Диффуза (Diffusal Blade)",
+		step: {
+			name: "item_diffusal_blade",
+			displayName: "Диффуза",
+			altNames: ["item_diffusal_blade", "item_disperser"],
+			components: [
+				{ name: "item_blade_of_alacrity" },
+				{ name: "item_robe" },
+				{ name: "item_recipe_diffusal_blade" }
+			]
+		}
+	},
+	{
+		id: "item_disperser",
+		name: "Дисперсер (Disperser)",
+		step: {
+			name: "item_disperser",
+			displayName: "Дисперсер",
+			components: [
+				{ name: "item_diffusal_blade", subComponents: ["item_blade_of_alacrity", "item_robe", "item_recipe_diffusal_blade"] },
+				{ name: "item_eagle" },
+				{ name: "item_recipe_disperser" }
+			]
+		}
+	},
+	{
+		id: "item_orchid",
+		name: "Орчид (Orchid Malevolence)",
+		step: {
+			name: "item_orchid",
+			displayName: "Орчид",
+			altNames: ["item_orchid", "item_bloodthorn"],
+			components: [
+				{ name: "item_blitz_knuckles" },
+				{ name: "item_claymore" },
+				{ name: "item_void_stone" },
+				{ name: "item_recipe_orchid" }
+			]
+		}
+	},
+	{
+		id: "item_bloodthorn",
+		name: "Бладторн (Bloodthorn)",
+		step: {
+			name: "item_bloodthorn",
+			displayName: "Бладторн",
+			components: [
+				{ name: "item_orchid", subComponents: ["item_blitz_knuckles", "item_claymore", "item_void_stone", "item_recipe_orchid"] },
+				{ name: "item_mage_slayer", subComponents: ["item_cloak", "item_blitz_knuckles", "item_recipe_mage_slayer"] },
+				{ name: "item_recipe_bloodthorn" }
+			]
+		}
+	},
+	{
+		id: "item_heart",
+		name: "Тарраска / Харт (Heart of Tarrasque)",
+		step: {
+			name: "item_heart",
+			displayName: "Тарраска",
+			components: [
+				{ name: "item_vitality_booster" },
+				{ name: "item_reaver" },
+				{ name: "item_recipe_heart" }
+			]
+		}
+	},
+	{
+		id: "item_assault",
+		name: "Кираса (Assault Cuirass)",
+		step: {
+			name: "item_assault",
+			displayName: "Кираса",
+			components: [
+				{ name: "item_platemail" },
+				{ name: "item_hyperstone" },
+				{ name: "item_buckler" },
+				{ name: "item_recipe_assault" }
+			]
+		}
+	},
+	{
+		id: "item_shivas_guard",
+		name: "Шива (Shiva's Guard)",
+		step: {
+			name: "item_shivas_guard",
+			displayName: "Шива",
+			components: [
+				{ name: "item_platemail" },
+				{ name: "item_crown" },
+				{ name: "item_helm_of_iron_will" },
+				{ name: "item_recipe_shivas_guard" }
+			]
+		}
+	},
+	{
+		id: "item_sphere",
+		name: "Линка (Linken's Sphere)",
+		step: {
+			name: "item_sphere",
+			displayName: "Линка",
+			components: [
+				{ name: "item_ultimate_orb" },
+				{ name: "item_pers" },
+				{ name: "item_recipe_sphere" }
+			]
+		}
+	},
+	{
+		id: "item_monkey_king_bar",
+		name: "МКБ (Monkey King Bar)",
+		step: {
+			name: "item_monkey_king_bar",
+			displayName: "МКБ",
+			components: [
+				{ name: "item_demon_edge" },
+				{ name: "item_blitz_knuckles" },
+				{ name: "item_javelin" },
+				{ name: "item_recipe_monkey_king_bar" }
+			]
+		}
+	},
+	{
+		id: "item_nullifier",
+		name: "Нулифаер (Nullifier)",
+		step: {
+			name: "item_nullifier",
+			displayName: "Нулифаер",
+			components: [
+				{ name: "item_relic" },
+				{ name: "item_helm_of_iron_will" }
+			]
+		}
+	},
+	{
+		id: "item_radiance",
+		name: "Радианс (Radiance)",
+		step: {
+			name: "item_radiance",
+			displayName: "Радианс",
+			components: [
+				{ name: "item_relic" },
+				{ name: "item_recipe_radiance" }
+			]
+		}
+	},
+	{
+		id: "item_moon_shard",
+		name: "Муншард (Moon Shard)",
+		step: {
+			name: "item_moon_shard",
+			displayName: "Муншард",
+			components: [
+				{ name: "item_hyperstone" },
+				{ name: "item_hyperstone" }
+			]
+		}
+	},
+	{
+		id: "item_skadi",
+		name: "Скади (Eye of Skadi)",
+		step: {
+			name: "item_skadi",
+			displayName: "Скади",
+			components: [
+				{ name: "item_ultimate_orb" },
+				{ name: "item_ultimate_orb" },
+				{ name: "item_point_booster" }
+			]
+		}
+	},
+	{
+		id: "item_heavens_halberd",
+		name: "Алебарда (Heaven's Halberd)",
+		step: {
+			name: "item_heavens_halberd",
+			displayName: "Алебарда",
+			components: [
+				{ name: "item_sange", subComponents: ["item_ogre_axe", "item_belt_of_strength", "item_recipe_sange"] },
+				{ name: "item_talisman_of_evasion" },
+				{ name: "item_recipe_heavens_halberd" }
+			]
+		}
+	},
+	{
+		id: "item_octarine_core",
+		name: "Октарин (Octarine Core)",
+		step: {
+			name: "item_octarine_core",
+			displayName: "Октарин",
+			components: [
+				{ name: "item_soul_booster" },
+				{ name: "item_tiara_of_selemene" }
+			]
+		}
+	},
+	{
+		id: "item_ultimate_scepter",
+		name: "Аганим (Aghanim's Scepter)",
+		step: {
+			name: "item_ultimate_scepter",
+			displayName: "Аганим",
+			altNames: ["item_ultimate_scepter", "item_ultimate_scepter_2"],
+			components: [
+				{ name: "item_point_booster" },
+				{ name: "item_staff_of_wizardry" },
+				{ name: "item_ogre_axe" },
+				{ name: "item_blade_of_alacrity" }
+			]
+		}
+	},
+	{
+		id: "item_sheepstick",
+		name: "Хекс (Scythe of Vyse)",
+		step: {
+			name: "item_sheepstick",
+			displayName: "Хекс",
+			components: [
+				{ name: "item_mystic_staff" },
+				{ name: "item_ultimate_orb" },
+				{ name: "item_void_stone" }
+			]
+		}
+	},
+	{
+		id: "item_rapier",
+		name: "Рапира (Divine Rapier)",
+		step: {
+			name: "item_rapier",
+			displayName: "Рапира",
+			components: [
+				{ name: "item_relic" },
+				{ name: "item_demon_edge" }
+			]
+		}
+	},
+	{
+		id: "item_soul_ring",
+		name: "Соулринг (Soul Ring)",
+		step: {
+			name: "item_soul_ring",
+			displayName: "Соулринг",
+			components: [
+				{ name: "item_gauntlets" },
+				{ name: "item_gauntlets" },
+				{ name: "item_ring_of_protection" },
+				{ name: "item_recipe_soul_ring" }
+			]
+		}
+	},
+	{
+		id: "item_hand_of_midas",
+		name: "Мидас (Hand of Midas)",
+		step: {
+			name: "item_hand_of_midas",
+			displayName: "Мидас",
+			components: [
+				{ name: "item_gloves" },
+				{ name: "item_recipe_hand_of_midas" }
+			]
+		}
+	},
+	{
+		id: "item_mage_slayer",
+		name: "Магслейер (Mage Slayer)",
+		step: {
+			name: "item_mage_slayer",
+			displayName: "Магслейер",
+			altNames: ["item_mage_slayer", "item_bloodthorn"],
+			components: [
+				{ name: "item_cloak" },
+				{ name: "item_blitz_knuckles" },
+				{ name: "item_recipe_mage_slayer" }
+			]
+		}
+	},
+	{
+		id: "item_echo_sabre",
+		name: "Эхо Сабля (Echo Sabre)",
+		step: {
+			name: "item_echo_sabre",
+			displayName: "Эхо Сабля",
+			altNames: ["item_echo_sabre", "item_harpoon"],
+			components: [
+				{ name: "item_ogre_axe" },
+				{ name: "item_broadsword" },
+				{ name: "item_void_stone" }
+			]
+		}
+	},
+	{
+		id: "item_harpoon",
+		name: "Гарпун (Harpoon)",
+		step: {
+			name: "item_harpoon",
+			displayName: "Гарпун",
+			components: [
+				{ name: "item_echo_sabre", subComponents: ["item_ogre_axe", "item_broadsword", "item_void_stone"] },
+				{ name: "item_diadem" },
+				{ name: "item_recipe_harpoon" }
+			]
+		}
+	},
+	{
+		id: "item_phylactery",
+		name: "Филактерия (Phylactery)",
+		step: {
+			name: "item_phylactery",
+			displayName: "Филактерия",
+			altNames: ["item_phylactery", "item_khanda"],
+			components: [
+				{ name: "item_point_booster" },
+				{ name: "item_diadem" },
+				{ name: "item_recipe_phylactery" }
+			]
+		}
+	},
+	{
+		id: "item_khanda",
+		name: "Кханда (Khanda)",
+		step: {
+			name: "item_khanda",
+			displayName: "Кханда",
+			components: [
+				{ name: "item_phylactery", subComponents: ["item_point_booster", "item_diadem", "item_recipe_phylactery"] },
+				{ name: "item_lesser_crit", subComponents: ["item_broadsword", "item_blades_of_attack", "item_recipe_lesser_crit"] },
+				{ name: "item_recipe_khanda" }
+			]
+		}
 	}
 ]
+
+const ITEM_NAMES = ITEM_OPTIONS.map(o => o.name)
 
 interface WardSpot {
 	name: string
@@ -349,7 +1042,14 @@ new (class JungleFarmScript {
 	private readonly courierSpeed = this.courierNode.AddToggle("Ускорение курьера", true, "Использовать ускорение, если оно готово")
 
 	private readonly shopNode = this.autoNode.AddNode("Авто-покупка", "", "Настройки автоматической покупки предметов")
-	private readonly autoBuyItems = this.shopNode.AddToggle("Авто-покупка", true, "Автоматически покупать Топор, Брейсер, Фейзы, МОМ, Яша")
+	private readonly autoBuyItems = this.shopNode.AddToggle("Включить авто-покупку", true, "Автоматически покупать предметы по очереди")
+	private readonly buyMode = this.shopNode.AddDropdown("Режим закупки", [
+		"По слотам очереди ниже (кастомный бай)",
+		"Только дефолт (Топор -> Брейсер -> Фейзы -> МОМ -> Яша)"
+	], 0, "Выберите режим: по слотам очереди (сохраняется навсегда) или строго дефолтная сборка")
+
+	private readonly customSlotsNode = this.shopNode.AddNode("Очередь покупки (Слоты 1-12)", "", "Настройте до 12 предметов в очереди покупки")
+	private readonly buySlots: Menu.Dropdown[] = []
 
 
 
@@ -819,6 +1519,19 @@ new (class JungleFarmScript {
 			}
 
 			this.spotLevelSliders.set(spot.name, node.AddSlider("Мин. уровень", defaultLvl, 1, 30, 0))
+		}
+
+		for (let i = 1; i <= 12; i++) {
+			let defaultIndex = 0
+			if (i === 1) defaultIndex = 1 // Топор
+			else if (i === 2) defaultIndex = 2 // Брейсер
+			else if (i === 3) defaultIndex = 3 // Фейзы
+			else if (i === 4) defaultIndex = 4 // МОМ
+			else if (i === 5) defaultIndex = 5 // Яша
+
+			this.buySlots.push(
+				this.customSlotsNode.AddDropdown(`Слот ${i}`, ITEM_NAMES, defaultIndex, `Предмет #${i} в очереди покупки`)
+			)
 		}
 
 		this.toggleKey.OnPressed(() => {
@@ -1974,23 +2687,86 @@ new (class JungleFarmScript {
 		return -1
 	}
 
+	private GetActiveItemBuild(): ItemBuildStep[] {
+		if (this.buyMode.SelectedID === 1) {
+			return [
+				ITEM_OPTIONS[1].step!,
+				ITEM_OPTIONS[2].step!,
+				ITEM_OPTIONS[3].step!,
+				ITEM_OPTIONS[4].step!,
+				ITEM_OPTIONS[5].step!
+			]
+		}
+
+		const build: ItemBuildStep[] = []
+		for (const slot of this.buySlots) {
+			const selIndex = slot.SelectedID
+			const option = ITEM_OPTIONS[selIndex]
+			if (option && option.step) {
+				build.push(option.step)
+			}
+		}
+
+		return build.length > 0 ? build : [
+			ITEM_OPTIONS[1].step!,
+			ITEM_OPTIONS[2].step!,
+			ITEM_OPTIONS[3].step!,
+			ITEM_OPTIONS[4].step!,
+			ITEM_OPTIONS[5].step!
+		]
+	}
+
 	private HandleAutoBuyItems(hero: Unit, state: UnitState): void {
 		if (!this.autoBuyItems.value) return
 
-		for (const step of autoBuyBuild) {
-			// Проверяем, есть ли у нас уже готовый предмет (или его апгрейд)
+		const activeBuild = this.GetActiveItemBuild()
+
+		for (const step of activeBuild) {
+			// Проверяем, есть ли у нас уже готовый предмет (или его альтернативное имя / апгрейд)
 			const checkNames = step.altNames ?? [step.name]
 			if (this.HasItemInInventoryOrStash(hero, checkNames, state)) {
 				continue
 			}
 
-			// Если готового предмета нет, ищем первый недостающий компонент
+			// Если готового предмета нет, ищем недостающие компоненты
 			for (const comp of step.components) {
+				// Если это составной компонент (например, Yasha внутри Manta или Basher внутри Abyssal):
+				if (comp.subComponents && comp.subComponents.length > 0) {
+					// Если сам промежуточный предмет уже собран в инвентаре / тайнике, компонент готов
+					if (this.HasItemInInventoryOrStash(hero, comp.name, state)) {
+						continue
+					}
+					// Если промежуточный предмет еще не собран, покупаем его недостающие части
+					for (const subCompName of comp.subComponents) {
+						if (!this.HasItemInInventoryOrStash(hero, subCompName, state)) {
+							const itemCost = this.GetItemCost(subCompName)
+							const heroGold = this.GetHeroGold(hero)
+
+							if (heroGold >= 0 && itemCost > 0 && heroGold < itemCost) {
+								return
+							}
+
+							const itemId = this.GetItemId(subCompName)
+							if (itemId > 0) {
+								this.Log(`Авто-покупка: покупка ${subCompName} для (${step.displayName}) [ID:${itemId}, Золото:${heroGold}/${itemCost}]`, hero)
+								hero.PurchaseItem(itemId)
+								if (!state.purchasedItems) state.purchasedItems = new Map()
+								state.purchasedItems.set(subCompName, GameState.RawGameTime)
+							} else {
+								this.Log(`Ошибка авто-покупки: не найден ID для ${subCompName}`, hero)
+							}
+							return
+						}
+					}
+					continue
+				}
+
+				// Обычный базовый компонент
 				if (!this.HasItemInInventoryOrStash(hero, comp.name, state)) {
 					const itemCost = this.GetItemCost(comp.name)
 					const heroGold = this.GetHeroGold(hero)
 
-					// Проверка на золото перед покупкой (не отправляем запрос, если золота не хватает)
+					// Проверка на золото перед покупкой
 					if (heroGold >= 0 && itemCost > 0 && heroGold < itemCost) {
 						return
 					}
@@ -2004,7 +2780,7 @@ new (class JungleFarmScript {
 					} else {
 						this.Log(`Ошибка авто-покупки: не найден ID для ${comp.name}`, hero)
 					}
-					return // Покупаем только 1 предмет за итерацию
+					return // Покупаем 1 предмет за итерацию
 				}
 			}
 		}
