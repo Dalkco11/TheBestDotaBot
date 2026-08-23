@@ -2725,15 +2725,15 @@ new (class JungleFarmScript {
 		const mouse = this.GetMousePos()
 		if (!mouse || !this.winButtonsPos) return true
 
-		const btnWidth = 100
-		const btnHeight = 28
-		const gap = 8
-		const totalWidth = btnWidth * 2 + gap + 8
-		const totalHeight = btnHeight + 8
+		const btnWidth = 85
+		const btnHeight = 24
+		const gap = 4
+		const totalWidth = btnWidth * 2 + gap
+		const totalHeight = btnHeight
 
 		const panelPos = this.winButtonsPos
 
-		// Check if click is inside the panel
+		// Check if click is inside the buttons area
 		if (
 			mouse.x >= panelPos.x &&
 			mouse.x <= panelPos.x + totalWidth &&
@@ -2758,12 +2758,13 @@ new (class JungleFarmScript {
 
 				// If moved less than 6px, it is a click!
 				if (dx < 6 && dy < 6) {
-					const btnWidth = 100
-					const btnHeight = 28
+					const btnWidth = 85
+					const btnHeight = 24
+					const gap = 4
 					const panelPos = this.winButtonsPos
 
-					const rBtnPos = new Vector2(panelPos.x + 4, panelPos.y + 4)
-					const dBtnPos = new Vector2(panelPos.x + 4 + btnWidth + 8, panelPos.y + 4)
+					const rBtnPos = new Vector2(panelPos.x, panelPos.y)
+					const dBtnPos = new Vector2(panelPos.x + btnWidth + gap, panelPos.y)
 
 					if (
 						mouse.x >= rBtnPos.x &&
@@ -2793,67 +2794,61 @@ new (class JungleFarmScript {
 	private DrawWinButtons(screenSize: Vector2): void {
 		if (!this.showWinButtons.value) return
 
+		const btnWidth = 85
+		const btnHeight = 24
+		const gap = 4
+
 		if (!this.winButtonsPos) {
-			this.winButtonsPos = new Vector2(25, Math.max(100, screenSize.y - 340))
+			this.winButtonsPos = new Vector2(310, Math.max(0, screenSize.y - 28))
 		}
 
 		if (this.isDraggingWinButtons) {
 			const mouse = this.GetMousePos()
 			if (mouse) {
-				const newX = Math.max(0, Math.min(screenSize.x - 220, mouse.x - this.dragOffsetWinButtons.x))
-				const newY = Math.max(0, Math.min(screenSize.y - 45, mouse.y - this.dragOffsetWinButtons.y))
+				const newX = Math.max(0, Math.min(screenSize.x - (btnWidth * 2 + gap), mouse.x - this.dragOffsetWinButtons.x))
+				const newY = Math.max(0, Math.min(screenSize.y - btnHeight, mouse.y - this.dragOffsetWinButtons.y))
 				this.winButtonsPos = new Vector2(newX, newY)
 			}
 		}
 
 		const panelPos = this.winButtonsPos
-		const btnWidth = 100
-		const btnHeight = 28
-		const gap = 8
-		const totalWidth = btnWidth * 2 + gap + 8
-		const totalHeight = btnHeight + 8
-
-		// Panel background
-		RendererSDK.FilledRect(panelPos, new Vector2(totalWidth, totalHeight), new Color(15, 18, 26, 210), 6)
-		RendererSDK.OutlinedRect(panelPos, new Vector2(totalWidth, totalHeight), 1, new Color(255, 255, 255, 40), 6)
-
 		const mouse = this.GetMousePos()
 
-		// 1. Radiant Win Button
-		const rBtnPos = new Vector2(panelPos.x + 4, panelPos.y + 4)
+		// 1. Radiant Win Button (без общего заднего фона)
+		const rBtnPos = new Vector2(panelPos.x, panelPos.y)
 		const isHoverR = mouse ? (mouse.x >= rBtnPos.x && mouse.x <= rBtnPos.x + btnWidth && mouse.y >= rBtnPos.y && mouse.y <= rBtnPos.y + btnHeight) : false
-		const rBgColor = isHoverR ? new Color(34, 145, 40, 250) : new Color(22, 100, 30, 220)
+		const rBgColor = isHoverR ? new Color(34, 145, 40, 250) : new Color(22, 100, 30, 210)
 		const rBorderColor = isHoverR ? new Color(120, 255, 120, 255) : new Color(60, 200, 60, 180)
 
 		RendererSDK.FilledRect(rBtnPos, new Vector2(btnWidth, btnHeight), rBgColor, 4)
 		RendererSDK.OutlinedRect(rBtnPos, new Vector2(btnWidth, btnHeight), 1, rBorderColor, 4)
 
 		const rText = "Radiant Win"
-		const rTextSize = RendererSDK.GetTextSize(rText, "Roboto", 13, 700)
+		const rTextSize = RendererSDK.GetTextSize(rText, "Roboto", 12, 700)
 		const rTextDrawPos = new Vector2(
 			rBtnPos.x + (btnWidth - rTextSize.x) / 2,
 			rBtnPos.y + (btnHeight - rTextSize.y) / 2
 		)
-		RendererSDK.Text(rText, rTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 13, 700)
-		RendererSDK.Text(rText, rTextDrawPos, Color.White, "Roboto", 13, 700)
+		RendererSDK.Text(rText, rTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 12, 700)
+		RendererSDK.Text(rText, rTextDrawPos, Color.White, "Roboto", 12, 700)
 
-		// 2. Dire Win Button
-		const dBtnPos = new Vector2(panelPos.x + 4 + btnWidth + gap, panelPos.y + 4)
+		// 2. Dire Win Button (без общего заднего фона)
+		const dBtnPos = new Vector2(panelPos.x + btnWidth + gap, panelPos.y)
 		const isHoverD = mouse ? (mouse.x >= dBtnPos.x && mouse.x <= dBtnPos.x + btnWidth && mouse.y >= dBtnPos.y && mouse.y <= dBtnPos.y + btnHeight) : false
-		const dBgColor = isHoverD ? new Color(185, 30, 30, 250) : new Color(135, 20, 20, 220)
+		const dBgColor = isHoverD ? new Color(185, 30, 30, 250) : new Color(135, 20, 20, 210)
 		const dBorderColor = isHoverD ? new Color(255, 120, 120, 255) : new Color(220, 50, 50, 180)
 
 		RendererSDK.FilledRect(dBtnPos, new Vector2(btnWidth, btnHeight), dBgColor, 4)
 		RendererSDK.OutlinedRect(dBtnPos, new Vector2(btnWidth, btnHeight), 1, dBorderColor, 4)
 
 		const dText = "Dire win"
-		const dTextSize = RendererSDK.GetTextSize(dText, "Roboto", 13, 700)
+		const dTextSize = RendererSDK.GetTextSize(dText, "Roboto", 12, 700)
 		const dTextDrawPos = new Vector2(
 			dBtnPos.x + (btnWidth - dTextSize.x) / 2,
 			dBtnPos.y + (btnHeight - dTextSize.y) / 2
 		)
-		RendererSDK.Text(dText, dTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 13, 700)
-		RendererSDK.Text(dText, dTextDrawPos, Color.White, "Roboto", 13, 700)
+		RendererSDK.Text(dText, dTextDrawPos.AddScalar(1), new Color(0, 0, 0, 220), "Roboto", 12, 700)
+		RendererSDK.Text(dText, dTextDrawPos, Color.White, "Roboto", 12, 700)
 	}
 
 	private GetItemId(itemName: string): number {
