@@ -556,9 +556,38 @@ new (class JungleFarmScript {
 			}
 		}
 
+		// 3. НА 1 УРОВНЕ: Если нет кастомного выбора, качаем АОЕ скилл (если есть), иначе пассивку
+		if (hero.Level === 1 && candidates.length === 0) {
+			const isAOEAbility = (s: Ability): boolean => {
+				if (s.IsPassive || s.IsUltimate || s.Name.startsWith("special_bonus_")) return false
+				const behavior = s.AbilityBehaviorMask ?? 0n
+				if (typeof DOTA_ABILITY_BEHAVIOR !== "undefined") {
+					if ((behavior & (DOTA_ABILITY_BEHAVIOR as any).DOTA_ABILITY_BEHAVIOR_AOE) !== 0n) return true
+					if ((behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_POINT) !== 0n) return true
+				}
+				const aoeKeywords = [
+					"odds", "spray", "multishot", "shrapnel", "breathe", "avalanche", "smash",
+					"pulse", "shock", "fury", "quill", "pact", "wave", "split", "anchor",
+					"rot", "acid", "fire", "cleave", "storm_bolt", "earthshock", "counter_helix", "slam"
+				]
+				const name = s.Name.toLowerCase()
+				return aoeKeywords.some(kw => name.includes(kw))
+			}
+
+			const aoeSpell = spells.find(s => isAOEAbility(s) && isLearnable(s))
+			if (aoeSpell) {
+				candidates.push(aoeSpell)
+			} else {
+				const passiveSpell = spells.find(s => s.IsPassive && !s.IsUltimate && !s.Name.startsWith("special_bonus_") && isLearnable(s))
+				if (passiveSpell) {
+					candidates.push(passiveSpell)
+				}
+			}
+		}
+
 		const heroName = hero.Name.toLowerCase()
 
-		// 3. СПЕЦИАЛЬНЫЕ ПРИОРИТЕТЫ ДЛЯ КОНКРЕТНЫХ ГЕРОЕВ
+		// 4. СПЕЦИАЛЬНЫЕ ПРИОРИТЕТЫ ДЛЯ КОНКРЕТНЫХ ГЕРОЕВ
 		// Исключение: Алхимик -> Acid Spray первым, затем пассивка Greevil's Greed
 		const heroOverrides: Record<string, string[]> = {
 			npc_dota_hero_alchemist: [
@@ -950,6 +979,9 @@ new (class JungleFarmScript {
 				}
 
 				if (!this.state.value) {
+					if (u.IsHero && !u.IsIllusion) {
+						this.HandleMidIdleCombat(u, unitState)
+					}
 					this.SaveUnitState(u, unitState)
 					continue
 				}
@@ -2338,6 +2370,112 @@ new (class JungleFarmScript {
 		}
 
 		return false
+	}
+
+	private HandleMidIdleCombat(hero: Unit, state: UnitState): void {
+		const midPos = hero.Team === Team.Radiant ? new Vector3(-855, -701, 128) : (hero.Team === Team.Dire ? new Vector3(-180, -31, 128) : undefined)
+		if (!midPos) return
+		if (hero.Distance2D(midPos) > 500) return
+
+		const allUnits = this.SafeGetEntities<Unit>(Unit)
+		this.cachedHeroes = allUnits.filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
+		const enemyHeroes = this.cachedHeroes.filter(h =>
+			h.IsEnemy(hero) && h.IsAlive && h.IsVisible && !h.IsInvulnerable && !h.IsAttackImmune
+		)
+		if (enemyHeroes.length === 0) return
+
+		enemyHeroes.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))
+		const target = enemyHeroes[0]
+		const dist = hero.Distance2D(target)
+		if (dist > 1200) return
+
+		const rawTime = GameState.RawGameTime
+
+		// 1. По возможности используем способности на вражеского героя
+		const spells = hero.Spells.filter((s): s is Ability =>
+			s !== undefined &&
+			s.Level > 0 &&
+			s.IsActivated &&
+			s.IsReady &&
+			!s.IsNotLearnable &&
+			!s.IsPassive &&
+			!s.IsHidden
+		)
+
+		let casted = false
+		for (const spell of spells) {
+			if (state.failedActions.has(spell.Name) && state.failedActions.get(spell.Name)! > rawTime) continue
+
+			const behavior = spell.AbilityBehaviorMask ?? 0n
+			const isNoTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_NO_TARGET) !== 0n
+			const isUnitTarget = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_UNIT_TARGET) !== 0n
+			const isPoint = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_POINT) !== 0n
+			const isToggle = (behavior & DOTA_ABILITY_BEHAVIOR.DOTA_ABILITY_BEHAVIOR_TOGGLE) !== 0n
+
+			if (isToggle) {
+				if (!spell.IsToggled && dist <= hero.AttackRange + 150) {
+					spell.UseAbility(undefined, false, true)
+					state.failedActions.set(spell.Name, rawTime + 1.0)
+					state.lastOrderTime = rawTime
+					casted = true
+					break
+				}
+				continue
+			}
+
+			if (isUnitTarget) {
+				const teamMask = spell.TargetTeamMask
+				const isEnemyTarget = (teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_ENEMY) !== 0n ||
+					(teamMask & DOTA_UNIT_TARGET_TEAM.DOTA_UNIT_TARGET_TEAM_BOTH) !== 0n ||
+					teamMask === 0n
+				const castRange = (spell.CastRange || 600) + 150
+				if (isEnemyTarget && dist <= castRange && (!target.IsMagicImmune || spell.CanHitSpellImmuneEnemy)) {
+					this.UseSoulRing(hero)
+					spell.UseAbility(target)
+					state.failedActions.set(spell.Name, rawTime + 1.0)
+					state.lastOrderTime = rawTime
+					this.Log(`Мид (выкл): применен ${spell.Name} на ${target.Name}`, hero)
+					casted = true
+					break
+				}
+			}
+
+			if (isPoint) {
+				const castRange = (spell.CastRange || 600) + 200
+				if (dist <= castRange) {
+					this.UseSoulRing(hero)
+					spell.UseAbility(target.Position)
+					state.failedActions.set(spell.Name, rawTime + 1.0)
+					state.lastOrderTime = rawTime
+					this.Log(`Мид (выкл): применен ${spell.Name} по позиции`, hero)
+					casted = true
+					break
+				}
+			}
+
+			if (isNoTarget) {
+				const aoe = (spell.AOERadius && spell.AOERadius > 0) ? spell.AOERadius : 400
+				if (dist <= aoe) {
+					this.UseSoulRing(hero)
+					spell.UseAbility()
+					state.failedActions.set(spell.Name, rawTime + 1.0)
+					state.lastOrderTime = rawTime
+					this.Log(`Мид (выкл): применен ${spell.Name} (NoTarget)`, hero)
+					casted = true
+					break
+				}
+			}
+		}
+
+		// 2. Атакуем вражеского героя
+		if (!casted) {
+			const isAttackingTarget = (hero.Target === target || hero.TargetIndex_ === target.Index) && hero.IsAttacking
+			if (!isAttackingTarget && rawTime > state.lastOrderTime + 0.3) {
+				hero.AttackTarget(target, false, true)
+				state.lastOrderTime = rawTime
+				state.lastOrderWasAttack = true
+			}
+		}
 	}
 
 	private AutoAbilities(hero: Unit, state: UnitState): boolean {
