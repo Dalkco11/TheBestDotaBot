@@ -3729,8 +3729,8 @@ new (class JungleFarmScript {
 			}
 
 			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
-			if (gameTime > 420) {
-				const cycle = Math.floor(gameTime / 420)
+			if (inGameTime > 420) {
+				const cycle = Math.floor(inGameTime / 420)
 
 				if (state.currentFarmMode === "wisdom" && state.currentWisdomSpot) {
 					// Если цикл уже прошел, сбрасываем режим
