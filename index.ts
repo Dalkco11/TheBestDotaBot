@@ -3669,8 +3669,7 @@ new (class JungleFarmScript {
 			state.isEscapingTower = false
 
 			// Логика стакания лагерей в X:53
-			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
-
+			const inGameTime = this.GetInGameTime()
 
 			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
 			if (inGameTime > 180) {
