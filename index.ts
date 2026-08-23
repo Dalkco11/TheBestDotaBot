@@ -541,9 +541,24 @@ new (class JungleFarmScript {
 			candidates.push(...ultimates)
 		}
 
+		// 2. ВЫБРАННЫЕ СКИЛЛЫ ИЗ МЕНЮ ИГРОКА (Пользовательский приоритет)
+		const priorityList = [settings.p1.SelectedID, settings.p2.SelectedID, settings.p3.SelectedID, settings.p4.SelectedID]
+		for (const id of priorityList) {
+			if (id === 0) continue // 0 = "None"
+			let target: Ability | undefined
+			if (id === 4) { // 4 = "R" (Ультимейт)
+				target = spells.find(s => s.IsUltimate) ?? hero.Spells[3]
+			} else { // 1 = "Q", 2 = "W", 3 = "E"
+				target = hero.Spells[id - 1] ?? undefined
+			}
+			if (isLearnable(target) && !candidates.includes(target)) {
+				candidates.push(target)
+			}
+		}
+
 		const heroName = hero.Name.toLowerCase()
 
-		// 2. СПЕЦИАЛЬНЫЕ ПРИОРИТЕТЫ ДЛЯ КОНКРЕТНЫХ ГЕРОЕВ
+		// 3. СПЕЦИАЛЬНЫЕ ПРИОРИТЕТЫ ДЛЯ КОНКРЕТНЫХ ГЕРОЕВ
 		// Исключение: Алхимик -> Acid Spray первым, затем пассивка Greevil's Greed
 		const heroOverrides: Record<string, string[]> = {
 			npc_dota_hero_alchemist: [
@@ -568,8 +583,8 @@ new (class JungleFarmScript {
 			],
 			npc_dota_hero_legion_commander: [
 				"legion_commander_moment_of_courage",
-				"legion_commander_press_the_attack",
-				"legion_commander_overwhelming_odds"
+				"legion_commander_overwhelming_odds",
+				"legion_commander_press_the_attack"
 			],
 			npc_dota_hero_axe: [
 				"axe_counter_helix",
@@ -666,14 +681,14 @@ new (class JungleFarmScript {
 				}
 			}
 		} else {
-			// 3. ОБЩИЙ ПРИОРИТЕТ ДЛЯ ВСЕХ ОСТАЛЬНЫХ ГЕРОЕВ:
-			// 3.1. Сначала пассивки героя
+			// 4. ОБЩИЙ ПРИОРИТЕТ ДЛЯ ВСЕХ ОСТАЛЬНЫХ ГЕРОЕВ:
+			// 4.1. Сначала пассивки героя
 			const passives = spells.filter(s => s.IsPassive && !s.IsUltimate && !s.Name.startsWith("special_bonus_") && isLearnable(s))
 			for (const p of passives) {
 				if (!candidates.includes(p)) candidates.push(p)
 			}
 
-			// 3.2. Затем способности, помогающие фармить (AoE / Cleave / Buffs)
+			// 4.2. Затем способности, помогающие фармить (AoE / Cleave / Buffs)
 			const farmKeywords = [
 				"cleave", "spray", "spin", "fury", "aura", "greed", "glaive", "swipes", 
 				"split", "overpower", "pulse", "anchor", "breathe", "tree_grab", "bloodrage", 
@@ -688,20 +703,6 @@ new (class JungleFarmScript {
 			)
 			for (const fs of farmSpells) {
 				if (!candidates.includes(fs)) candidates.push(fs)
-			}
-		}
-
-		// 4. Выбранные скиллы из меню игрока (если настроены)
-		const priorityList = [settings.p1.SelectedID, settings.p2.SelectedID, settings.p3.SelectedID, settings.p4.SelectedID]
-		for (const id of priorityList) {
-			let target: Ability | undefined
-			if (id === 3) {
-				target = spells.find(s => s.IsUltimate)
-			} else {
-				target = hero.Spells[id] ?? undefined
-			}
-			if (isLearnable(target) && !candidates.includes(target)) {
-				candidates.push(target)
 			}
 		}
 
@@ -922,10 +923,10 @@ new (class JungleFarmScript {
 							node: heroNode,
 							autoLevel: heroNode.AddToggle("Авто-прокачка", true),
 							prioritizeUlt: heroNode.AddToggle("Всегда первым качать ульту", true),
-							p1: heroNode.AddDropdown("Приоритет 1", ["Q", "W", "E", "R"], 0),
-							p2: heroNode.AddDropdown("Приоритет 2", ["Q", "W", "E", "R"], 1),
-							p3: heroNode.AddDropdown("Приоритет 3", ["Q", "W", "E", "R"], 2),
-							p4: heroNode.AddDropdown("Приоритет 4", ["Q", "W", "E", "R"], 3)
+							p1: heroNode.AddDropdown("Приоритет 1", ["None", "Q", "W", "E", "R"], 0),
+							p2: heroNode.AddDropdown("Приоритет 2", ["None", "Q", "W", "E", "R"], 0),
+							p3: heroNode.AddDropdown("Приоритет 3", ["None", "Q", "W", "E", "R"], 0),
+							p4: heroNode.AddDropdown("Приоритет 4", ["None", "Q", "W", "E", "R"], 0)
 						}
 						this.heroSettings.set(hKey, settings)
 					}
@@ -1374,10 +1375,10 @@ new (class JungleFarmScript {
 					node: heroNode,
 					autoLevel: heroNode.AddToggle("Авто-прокачка", true),
 					prioritizeUlt: heroNode.AddToggle("Всегда первым качать ульту", true),
-					p1: heroNode.AddDropdown("Приоритет 1", ["Q", "W", "E", "R"], 0),
-					p2: heroNode.AddDropdown("Приоритет 2", ["Q", "W", "E", "R"], 1),
-					p3: heroNode.AddDropdown("Приоритет 3", ["Q", "W", "E", "R"], 2),
-					p4: heroNode.AddDropdown("Приоритет 4", ["Q", "W", "E", "R"], 3)
+					p1: heroNode.AddDropdown("Приоритет 1", ["None", "Q", "W", "E", "R"], 0),
+					p2: heroNode.AddDropdown("Приоритет 2", ["None", "Q", "W", "E", "R"], 0),
+					p3: heroNode.AddDropdown("Приоритет 3", ["None", "Q", "W", "E", "R"], 0),
+					p4: heroNode.AddDropdown("Приоритет 4", ["None", "Q", "W", "E", "R"], 0)
 				}
 				this.heroSettings.set(heroKey, settings)
 			}
