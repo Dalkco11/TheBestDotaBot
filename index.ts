@@ -1035,7 +1035,8 @@ new (class JungleFarmScript {
 	private readonly debugNode = this.entry.AddNode("Отладка", "", "Настройки ползунков и отладки")
 	private readonly hpThreshold = this.debugNode.AddSlider("Порог здоровья %", 22, 0, 100, 0, "При каком HP идти лечиться на базу")
 	private readonly wardRadius = this.debugNode.AddSlider("Радиус активации варда", 1200, 500, 3000, 0, "Если бот пробегает в этом радиусе от точки, он поставит вард")
-	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 0, "На какой минуте игры автоматически включить скрипт")
+	private readonly autoEnableTime = this.debugNode.AddSlider("Минута включения", 4, 0, 60, 0, "На какой минуте ИГРЫ (после горна 0:00) автоматически включить скрипт")
+	private readonly spamMidWhenDisabled = this.debugNode.AddToggle("Движение на мид при выкл", true, "Каждые 5 сек отправлять героя на мид до старта/когда скрипт выключен")
 	private readonly chatOnHeroDamageLevel = this.debugNode.AddSlider("Уровень для чата", 2, 1, 30, 0, "С какого уровня героя начнет работать отправка сообщений в чат")
 	private readonly minAPMStr = this.debugNode.AddSlider("Мин. АПМ", 120, 10, 300, 0)
 	private readonly maxAPMStr = this.debugNode.AddSlider("Макс. АПМ", 150, 10, 310, 0)
@@ -1719,8 +1720,9 @@ new (class JungleFarmScript {
 				}
 
 				if (!this.state.value) {
-					if (u.IsHero && !u.IsIllusion) {
+					if (u.IsHero && !u.IsIllusion && u.IsAlive) {
 						this.HandleMidIdleCombat(u, unitState)
+						this.HandleMidIdleMovement(u, unitState)
 					}
 					this.SaveUnitState(u, unitState)
 					continue
@@ -2155,11 +2157,11 @@ new (class JungleFarmScript {
 				this.heroSettings.set(heroKey, settings)
 			}
 
-			// Auto-enable logic
-			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
-			if (!this.state.value && this.autoEnable.value && gameTime >= this.autoEnableTime.value * 60) {
+			// Auto-enable logic (отсчитывается строго от игрового времени горна 0:00)
+			const inGameTime = this.GetInGameTime()
+			if (!this.state.value && this.autoEnable.value && inGameTime >= this.autoEnableTime.value * 60) {
 				this.state.value = true
-				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин)`)
+				this.Log(`Скрипт включен автоматически (${this.autoEnableTime.value} мин игрового времени)`)
 			}
 
 
@@ -2295,11 +2297,17 @@ new (class JungleFarmScript {
 			yOffset += 90
 
 			if (this.showGameTimer.value) {
-				const time = Math.floor(GameState.RawGameTime - (GameRules?.GameStartTime ?? 0))
-				const absTime = Math.abs(time)
-				const mins = Math.floor(absTime / 60)
-				const secs = absTime % 60
-				const timeStr = `${time < 0 ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
+				const inGameTime = this.GetInGameTime()
+				let timeStr = "0:00"
+				if (inGameTime <= -9000) {
+					timeStr = "Стадия пиков / Ожидание"
+				} else {
+					const isNeg = inGameTime < 0
+					const absSec = Math.floor(Math.abs(inGameTime))
+					const mins = Math.floor(absSec / 60)
+					const secs = absSec % 60
+					timeStr = `${isNeg ? "-" : ""}${mins}:${secs.toString().padStart(2, "0")}`
+				}
 				RendererSDK.Text(`Время игры: ${timeStr}`, new Vector2(200, yOffset), Color.White.SetA(200), "Roboto", 16)
 				yOffset += 24
 			}
@@ -2480,11 +2488,11 @@ new (class JungleFarmScript {
 			// Авто-вардинг
 			this.HandleAutoWarding(hero, state)
 
-			const gameTime = GameState.RawGameTime - (GameRules?.GameStartTime ?? 0)
-			const currentMinute = Math.floor(gameTime / 60)
+			const inGameTime = this.GetInGameTime()
+			const currentMinute = Math.floor(inGameTime / 60)
 
-			if (this.lastMinute === -1) this.lastMinute = currentMinute
-			if (currentMinute !== this.lastMinute) {
+			if (inGameTime >= 0 && this.lastMinute === -1) this.lastMinute = currentMinute
+			if (inGameTime >= 0 && currentMinute !== this.lastMinute) {
 				this.emptySpots.clear()
 				this.allyAtSpotSince.clear()
 				this.lastMinute = currentMinute
@@ -2696,6 +2704,17 @@ new (class JungleFarmScript {
 	private GetItemCost(itemName: string): number {
 		const data = AbilityData.GetAbilityByName(itemName)
 		return data?.Cost ?? 0
+	}
+
+	private GetInGameTime(): number {
+		try {
+			if (!GameRules || typeof GameRules.GameStartTime !== 'number' || GameRules.GameStartTime <= 0) {
+				return -9999
+			}
+			return GameState.RawGameTime - GameRules.GameStartTime
+		} catch (e) {
+			return -9999
+		}
 	}
 
 	private GetHeroGold(hero: Unit): number {
@@ -3410,6 +3429,28 @@ new (class JungleFarmScript {
 		}
 	}
 
+	private lastMidClickTime: Map<number, number> = new Map()
+
+	private HandleMidIdleMovement(hero: Unit, state: UnitState): void {
+		if (!this.spamMidWhenDisabled.value) return
+		if (!hero || !hero.IsAlive) return
+
+		const rawTime = GameState.RawGameTime
+		const lastClick = this.lastMidClickTime.get(hero.Index) ?? 0
+
+		if (rawTime - lastClick < 5.0) return
+
+		const midPos = hero.Team === Team.Radiant ? new Vector3(-855, -701, 128) : (hero.Team === Team.Dire ? new Vector3(-180, -31, 128) : undefined)
+		if (!midPos) return
+
+		// Если герой уже близко к точке мида (< 150), не спамим кликами
+		if (hero.Distance2D(midPos) < 150) return
+
+		hero.MoveTo(midPos, false, true)
+		this.lastMidClickTime.set(hero.Index, rawTime)
+		this.Log("Движение на мид (таймер 5 сек)", hero)
+	}
+
 	private AutoAbilities(hero: Unit, state: UnitState): boolean {
 		const manaPercentThreshold = this.manaThreshold.value
 		if (hero.ManaPercent < manaPercentThreshold) return false
@@ -3632,8 +3673,8 @@ new (class JungleFarmScript {
 
 
 			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
-			if (gameTime > 180) {
-				const cycle = Math.floor(gameTime / 180)
+			if (inGameTime > 180) {
+				const cycle = Math.floor(inGameTime / 180)
 
 				// Если мы в режиме лотоса, продолжаем сбор
 				if (state.currentFarmMode === "lotus" && state.currentLotusSpot) {
