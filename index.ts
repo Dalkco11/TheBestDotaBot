@@ -829,6 +829,23 @@ const ITEM_OPTIONS: { id: string; name: string; step?: ItemBuildStep }[] = [
 ]
 
 const ITEM_NAMES = ITEM_OPTIONS.map(o => o.name)
+const ALL_ITEM_KEYS = ITEM_OPTIONS.filter(o => o.id !== "none").map(o => o.id)
+const ITEM_CATALOG = new Map<string, ItemBuildStep>()
+for (const opt of ITEM_OPTIONS) {
+	if (opt.id !== "none" && opt.step) {
+		ITEM_CATALOG.set(opt.id, opt.step)
+	}
+}
+
+const DEFAULT_BUILD_KEYS = ["item_quelling_blade", "item_bracer", "item_phase_boots", "item_mask_of_madness", "item_yasha"]
+const DEFAULT_BUILD_STEPS: ItemBuildStep[] = DEFAULT_BUILD_KEYS.map(k => ITEM_CATALOG.get(k)!).filter(Boolean)
+const DEFAULT_BUILD_DICT: Record<string, boolean> = {
+	item_quelling_blade: true,
+	item_bracer: true,
+	item_phase_boots: true,
+	item_mask_of_madness: true,
+	item_yasha: true
+}
 
 interface WardSpot {
 	name: string
@@ -1044,11 +1061,18 @@ new (class JungleFarmScript {
 	private readonly shopNode = this.autoNode.AddNode("Авто-покупка", "", "Настройки автоматической покупки предметов")
 	private readonly autoBuyItems = this.shopNode.AddToggle("Включить авто-покупку", true, "Автоматически покупать предметы по очереди")
 	private readonly buyMode = this.shopNode.AddDropdown("Режим закупки", [
-		"По слотам очереди ниже (кастомный бай)",
+		"Иконки предметов (Drag & Drop / Поиск)",
+		"По слотам (01-12)",
 		"Только дефолт (Топор -> Брейсер -> Фейзы -> МОМ -> Яша)"
-	], 0, "Выберите режим: по слотам очереди (сохраняется навсегда) или строго дефолтная сборка")
+	], 0, "Выберите способ настройки очереди: иконками с Drag & Drop и поиском, по слотам 01-12 или только дефолт")
 
-	private readonly customSlotsNode = this.shopNode.AddNode("Очередь покупки (Слоты 1-12)", "", "Настройте до 12 предметов в очереди покупки")
+	private readonly imageSelector = this.shopNode.AddImageSelector(
+		"Очередь покупки (Иконки)",
+		ALL_ITEM_KEYS,
+		DEFAULT_BUILD_DICT
+	)
+
+	private readonly customSlotsNode = this.shopNode.AddNode("Очередь по слотам (01-12)", "", "Альтернативная настройка по слотам")
 	private readonly buySlots: Menu.Dropdown[] = []
 
 
@@ -1522,6 +1546,7 @@ new (class JungleFarmScript {
 		}
 
 		for (let i = 1; i <= 12; i++) {
+			const slotNumStr = i < 10 ? `0${i}` : `${i}`
 			let defaultIndex = 0
 			if (i === 1) defaultIndex = 1 // Топор
 			else if (i === 2) defaultIndex = 2 // Брейсер
@@ -1530,7 +1555,7 @@ new (class JungleFarmScript {
 			else if (i === 5) defaultIndex = 5 // Яша
 
 			this.buySlots.push(
-				this.customSlotsNode.AddDropdown(`Слот ${i}`, ITEM_NAMES, defaultIndex, `Предмет #${i} в очереди покупки`)
+				this.customSlotsNode.AddDropdown(`${slotNumStr}. Слот`, ITEM_NAMES, defaultIndex, `Предмет #${i} в очереди покупки`)
 			)
 		}
 
@@ -2687,33 +2712,98 @@ new (class JungleFarmScript {
 		return -1
 	}
 
-	private GetActiveItemBuild(): ItemBuildStep[] {
-		if (this.buyMode.SelectedID === 1) {
-			return [
-				ITEM_OPTIONS[1].step!,
-				ITEM_OPTIONS[2].step!,
-				ITEM_OPTIONS[3].step!,
-				ITEM_OPTIONS[4].step!,
-				ITEM_OPTIONS[5].step!
-			]
+	private GetItemsFromImageSelector(selector: any): string[] {
+		if (!selector) return []
+
+		if (Array.isArray(selector.value)) {
+			return selector.value
+		}
+		if (Array.isArray(selector.SelectedValues)) {
+			return selector.SelectedValues
+		}
+		if (Array.isArray(selector.Items)) {
+			return selector.Items.filter((it: any) => typeof it === "string" ? (selector.IsEnabled?.(it) ?? true) : it?.value)
+		}
+		if (Array.isArray(selector.Values)) {
+			return selector.Values.filter((it: any) => typeof it === "string" ? (selector.IsEnabled?.(it) ?? true) : it?.value)
 		}
 
-		const build: ItemBuildStep[] = []
-		for (const slot of this.buySlots) {
-			const selIndex = slot.SelectedID
-			const option = ITEM_OPTIONS[selIndex]
-			if (option && option.step) {
-				build.push(option.step)
+		if (selector.values instanceof Map) {
+			const result: string[] = []
+			for (const [key, enabled] of selector.values) {
+				if (enabled) result.push(key)
 			}
+			return result
+		}
+		if (selector.value instanceof Map) {
+			const result: string[] = []
+			for (const [key, enabled] of selector.value) {
+				if (enabled) result.push(key)
+			}
+			return result
 		}
 
-		return build.length > 0 ? build : [
-			ITEM_OPTIONS[1].step!,
-			ITEM_OPTIONS[2].step!,
-			ITEM_OPTIONS[3].step!,
-			ITEM_OPTIONS[4].step!,
-			ITEM_OPTIONS[5].step!
-		]
+		if (selector.values && typeof selector.values === "object") {
+			const result: string[] = []
+			for (const [key, enabled] of Object.entries(selector.values)) {
+				if (enabled) result.push(key)
+			}
+			return result
+		}
+		if (selector.value && typeof selector.value === "object") {
+			const result: string[] = []
+			for (const [key, enabled] of Object.entries(selector.value)) {
+				if (enabled) result.push(key)
+			}
+			return result
+		}
+
+		if (typeof selector.IsEnabled === "function") {
+			const result: string[] = []
+			for (const key of ALL_ITEM_KEYS) {
+				if (selector.IsEnabled(key)) {
+					result.push(key)
+				}
+			}
+			return result
+		}
+
+		return []
+	}
+
+	private GetActiveItemBuild(): ItemBuildStep[] {
+		// 1. Режим: Только дефолт
+		if (this.buyMode.SelectedID === 2) {
+			return DEFAULT_BUILD_STEPS
+		}
+
+		// 2. Режим: По слотам (01-12)
+		if (this.buyMode.SelectedID === 1) {
+			const build: ItemBuildStep[] = []
+			for (const slot of this.buySlots) {
+				const selIndex = slot.SelectedID
+				const option = ITEM_OPTIONS[selIndex]
+				if (option && option.step) {
+					build.push(option.step)
+				}
+			}
+			return build.length > 0 ? build : DEFAULT_BUILD_STEPS
+		}
+
+		// 3. Режим: Иконки (ImageSelector - Drag & Drop / Поиск)
+		const selectedKeys = this.GetItemsFromImageSelector(this.imageSelector)
+		if (selectedKeys.length > 0) {
+			const build: ItemBuildStep[] = []
+			for (const key of selectedKeys) {
+				const step = ITEM_CATALOG.get(key)
+				if (step) {
+					build.push(step)
+				}
+			}
+			if (build.length > 0) return build
+		}
+
+		return DEFAULT_BUILD_STEPS
 	}
 
 	private HandleAutoBuyItems(hero: Unit, state: UnitState): void {
