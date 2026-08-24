@@ -82,8 +82,10 @@ interface UnitState {
 	assignedLane?: 1 | 2
 	lastBuyTime: number
 	purchasedItems?: Map<string, number>
+	spotMovementStartTime: number
 	lastXp?: number
 	lastXpChangeTime?: number
+	lastAntiAfkLogTime?: number
 }
 
 interface ItemComponent {
@@ -1212,7 +1214,9 @@ new (class JungleFarmScript {
 				lastNeutralCheckTime: 0,
 				assignedLane: undefined,
 				lastBuyTime: 0,
-				purchasedItems: new Map()
+				purchasedItems: new Map(),
+				spotMovementStartTime: 0,
+				lastAntiAfkLogTime: 0
 			}
 			this.unitStates.set(unit.Index, state)
 		}
@@ -2426,6 +2430,31 @@ new (class JungleFarmScript {
 			this.cachedCreeps = allUnits.filter(u => u.IsCreep || u instanceof Creep || this.IsNeutralCreep(u)) as unknown as Creep[]
 			this.cachedRunes = this.pickAllRunes.value ? this.SafeGetEntities<Rune>(Rune) : []
 			this.cachedHeroes = allUnits.filter(u => u.IsHero && u.IsAlive && u.IsVisible && u !== hero)
+
+			// Надежный трекинг опыта и Anti-AFK Watchdog
+			const currentXp = hero.CurrentXP
+			if (state.lastXp === undefined || state.lastXp !== currentXp) {
+				state.lastXp = currentXp
+				state.lastXpChangeTime = rawTime
+			}
+			const xpSecAgo = Math.floor(rawTime - (state.lastXpChangeTime ?? rawTime))
+
+			// Экстренный Anti-AFK Watchdog: если нет опыта > 60 секунд
+			if (xpSecAgo > 60) {
+				if (this.emptySpots.size > 0) {
+					this.emptySpots.clear()
+				}
+				if (state.currentFarmMode !== "lane") {
+					state.currentFarmMode = "lane"
+					state.lastModeSwitchTime = rawTime
+					state.currentJungleSpotName = null
+					state.spotMovementStartTime = 0
+				}
+				if (!state.lastAntiAfkLogTime || rawTime > state.lastAntiAfkLogTime + 15.0) {
+					this.Log(`Anti-AFK Watchdog: нет опыта ${xpSecAgo}с! Сброс лагерей, приоритет на линию`, hero)
+					state.lastAntiAfkLogTime = rawTime
+				}
+			}
 
 			// Если только что использован скилл или предмет, даем время на завершение анимации каста
 			if (justActed) {
@@ -3892,8 +3921,9 @@ new (class JungleFarmScript {
 				this.Log(`Ожидание на линии: Крип:${hasValidLaneCreep} Время:${timeSinceLastCreep.toFixed(1)}/${this.laneWaitTime.value} Lvl:${belowLevelThreshold}`, hero)
 			}
 
-			const forceLanePriority = this.lanePriorityUntil4.value && hero.Level < 4
-			const canFarmJungle = hero.Level >= this.laneOnlyUntilLevel.value || forceLanePriority
+			const currentXpSecAgo = Math.floor(rawTime - (state.lastXpChangeTime ?? rawTime))
+			const forceLanePriority = (this.lanePriorityUntil4.value && hero.Level < 4) || (currentXpSecAgo > 60)
+			const canFarmJungle = (hero.Level >= this.laneOnlyUntilLevel.value || forceLanePriority) && currentXpSecAgo <= 60
 			const nearestSpot = (canFarmJungle && !waitingOnLane) ? this.GetNearestEnabledSpot(hero, state) : null
 
 			// Логика выбора режима (Линия или Лес) с гистерезисом 300
@@ -4025,6 +4055,13 @@ new (class JungleFarmScript {
 				}
 				state.targetPos = nearestSpot.pos
 
+				// Отслеживаем время начала движения к споту для таймаута
+				if (state.currentJungleSpotName !== nearestSpot.name || !state.spotMovementStartTime) {
+					state.currentJungleSpotName = nearestSpot.name
+					state.spotMovementStartTime = rawTime
+					state.lastSpotArrivalTime = 0
+				}
+
 				// 1. Проверяем наличие любых нейтральных крипов рядом с героем (в радиусе 900) или на споте (1400)
 				const neutralsInSpot = this.cachedCreeps.filter(
 					c =>
@@ -4042,6 +4079,7 @@ new (class JungleFarmScript {
 					state.stuckCheckTime = rawTime
 					state.lastPosForStuckCheck = undefined
 					state.lastSpotArrivalTime = 0
+					state.spotMovementStartTime = 0
 
 					const closestNeutral = neutralsInSpot.sort((a, b) => hero.Distance2D(a) - hero.Distance2D(b))[0]
 					
@@ -4070,6 +4108,7 @@ new (class JungleFarmScript {
 				}
 
 				const dist = hero.Distance2D(nearestSpot.pos)
+				const isMovementTimedOut = rawTime - state.spotMovementStartTime > 7.0
 
 				if (rawTime > state.stuckCheckTime + 8.0) {
 					if (state.lastPosForStuckCheck && hero.Distance2D(state.lastPosForStuckCheck) < 75) {
@@ -4085,16 +4124,18 @@ new (class JungleFarmScript {
 					state.stuckCheckTime = rawTime
 				}
 
-				if (dist <= 450) {
+				if (dist <= 650 || isMovementTimedOut) {
 					if (state.lastSpotArrivalTime === 0) {
 						state.lastSpotArrivalTime = rawTime
 					}
 
 					const timeAtSpot = rawTime - state.lastSpotArrivalTime
-					if (timeAtSpot >= 1.5) {
-						this.setStatus(state, `Спот пуст: ${nearestSpot.name}`, hero)
+					if (timeAtSpot >= 1.0 || isMovementTimedOut) {
+						const reason = isMovementTimedOut ? "(таймаут пути 7с)" : ""
+						this.setStatus(state, `Спот пуст: ${nearestSpot.name} ${reason}`.trim(), hero)
 						this.emptySpots.add(nearestSpot.name)
 						state.currentJungleSpotName = null
+						state.spotMovementStartTime = 0
 						state.lastOrderTime = 0
 						state.lastSpotArrivalTime = 0
 						return true
@@ -4122,52 +4163,74 @@ new (class JungleFarmScript {
 					}
 				}
 
-				if (this.laneFarm.value && state.lastCreepDeathPos && !this.IsMidLane(state.lastCreepDeathPos)) {
-					this.setStatus(state, "Возврат на линию", hero)
-					let target = state.lastCreepDeathPos
+				// 1. Ищем союзных крипов на нашей линии
+				const alliedLaneCreeps = this.cachedCreeps.filter(c =>
+					!c.IsEnemy(hero) &&
+					!c.IsNeutral &&
+					c.IsAlive &&
+					c.IsVisible &&
+					!c.IsPhantom &&
+					!c.IsInvulnerable &&
+					this.IsOnSelectedLane(c.Position, hero, state)
+				)
 
-					// Если точка смерти крипа под ВРАЖЕСКОЙ башней, находим безопасную точку перед ней
-					if (this.IsInTowerRange(target, hero)) {
-						const tower = this.cachedTowers.find(t => t.IsAlive && t.IsEnemy(hero) && t.Distance2D(target) < 1000)
-						if (tower) {
-							const dirFromTower = target.Subtract(tower.Position).Normalize()
-							target = tower.Position.Add(dirFromTower.MultiplyScalar(900)) // Граница башни 850 + запас
-						}
+				let bestLaneTargetPos: Vector3 | undefined
+				if (alliedLaneCreeps.length > 0) {
+					// Берем союзного крипа, наиболее выдвинутого вперед к центру линии / от фонтана
+					const sortedAllies = alliedLaneCreeps.sort((a, b) => {
+						const distA = fountain ? fountain.Distance2D(a) : 0
+						const distB = fountain ? fountain.Distance2D(b) : 0
+						return distB - distA
+					})
+					const leadingAllied = sortedAllies[0]
+					if (leadingAllied && !this.IsInTowerRange(leadingAllied.Position, hero)) {
+						bestLaneTargetPos = leadingAllied.Position
 					}
+				}
 
-					const movePos = this.GetSafeMovePos(hero.Position, target, hero, state)
-					if (hero.Distance2D(movePos) > 150) {
-						hero.MoveTo(this.GetRandomizedPosition(movePos), false, true)
-						state.lastOrderTime = GameState.RawGameTime
+				// 2. Если союзных крипов нет, идем к дальнейшей союзной башне на линии
+				if (!bestLaneTargetPos) {
+					const tower = this.GetFurthestAlliedTower(hero, state)
+					if (tower) {
+						bestLaneTargetPos = tower.Position
+					}
+				}
+
+				// 3. Если и башен нет, берем дефолтную точку линии
+				if (!bestLaneTargetPos) {
+					bestLaneTargetPos = this.GetDefaultLanePos(hero, state)
+				}
+
+				// 4. Если нет опыта > 120 сек или герой на базе и далеко от линии (> 3500), пробуем ТП
+				const distToLaneTarget = hero.Distance2D(bestLaneTargetPos)
+				if ((currentXpSecAgo > 120 || isAtBase) && distToLaneTarget > 3500 && this.tpAfterHeal.value && rawTime > state.lastTpTime + 15.0) {
+					if (this.TryTpToFarmSpot(hero, state, bestLaneTargetPos)) {
 						return true
 					}
 				}
-				this.setStatus(state, "Нет доступных целей", hero)
-				state.currentFarmMode = "none"
-				state.targetPos = undefined
 
-				const distToFountain = fountain ? hero.Distance2D(fountain) : 10000
-				if (distToFountain < 6000 && !state.isGoingToFountain) {
-					// 1. Пробуем сделать ТП на линию
-					if (this.tpAfterHeal.value && rawTime > state.lastTpTime + 10.0) {
-						if (this.TryTpAfterHeal(hero, state)) {
-							return true
-						}
-					}
+				this.setStatus(state, "Ожидание крипов (Лес пуст)", hero)
+				state.currentFarmMode = "lane"
+				state.targetPos = bestLaneTargetPos
 
-					// 2. Идем пешком на линию
-					const targetPos = this.GetDefaultLanePos(hero, state)
-					this.setStatus(state, "Выход на линию", hero)
-					state.targetPos = targetPos
-					if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.2) {
-						const movePos = this.GetSafeMovePos(hero.Position, targetPos, hero, state)
-						hero.MoveTo(movePos, false, true)
+				if (distToLaneTarget > 350) {
+					if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.0) {
+						const movePos = this.GetSafeMovePos(hero.Position, bestLaneTargetPos, hero, state)
+						hero.MoveTo(this.GetRandomizedPosition(movePos, 40), false, true)
 						state.lastOrderTime = rawTime
 					}
 					return true
+				} else {
+					// Уже на месте у союзных крипов / башни — мелкие рандомные шаги для избежания АФК
+					if (rawTime > state.lastOrderTime + 1.5) {
+						const randomMove = this.GetRandomizedPosition(bestLaneTargetPos, 120)
+						if (!this.IsInTowerRange(randomMove, hero) && !this.IsMidLane(randomMove)) {
+							hero.MoveTo(randomMove, false, true)
+							state.lastOrderTime = rawTime
+						}
+					}
+					return true
 				}
-
-				return false
 			}
 		} catch (e) {
 			this.Log(`Farm Error: ${e}`, hero)
