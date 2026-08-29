@@ -1010,6 +1010,8 @@ new (class JungleFarmScript {
 	private readonly useNeutral = this.itemsNode.AddToggle("Авто-нейтралка", true)
 	private readonly autoLotus = this.itemsNode.AddToggle("Использовать лотосы", true)
 	private readonly lotusHpThreshold = this.itemsNode.AddSlider("ХП для лотоса %", 50, 10, 90, 0)
+	private readonly pickLotuses = this.itemsNode.AddToggle("Сбор лотосов (пруд)", true, "Автоматически подбирать лотосы в пруду каждые 3 мин")
+	private readonly pickWisdom = this.itemsNode.AddToggle("Сбор рун мудрости", true, "Автоматически подбирать руны мудрости каждые 7 мин")
 
 	private readonly abilitiesNode = this.autoNode.AddNode("Авто-способности")
 	private readonly useMovementAbilities = this.abilitiesNode.AddToggle("Передвижение", true)
@@ -2449,6 +2451,13 @@ new (class JungleFarmScript {
 					state.lastModeSwitchTime = rawTime
 					state.currentJungleSpotName = null
 					state.spotMovementStartTime = 0
+					state.currentLotusSpot = null
+					state.currentWisdomSpot = null
+					state.lotusArrivalTime = 0
+					state.wisdomArrivalTime = 0
+					const inGameTime = this.GetInGameTime()
+					state.lastLotusPickCycle = Math.floor(inGameTime / 180)
+					state.lastWisdomPickCycle = Math.floor(inGameTime / 420)
 				}
 				if (!state.lastAntiAfkLogTime || rawTime > state.lastAntiAfkLogTime + 15.0) {
 					this.Log(`Anti-AFK Watchdog: нет опыта ${xpSecAgo}с! Сброс лагерей, приоритет на линию`, hero)
@@ -3774,13 +3783,19 @@ new (class JungleFarmScript {
 			const inGameTime = this.GetInGameTime()
 
 			// Логика подбора лотосов каждые 3 минуты (3, 6, 9...)
-			if (inGameTime > 180) {
+			if (this.pickLotuses.value && inGameTime > 180) {
 				const cycle = Math.floor(inGameTime / 180)
 
 				// Если мы в режиме лотоса, продолжаем сбор
 				if (state.currentFarmMode === "lotus" && state.currentLotusSpot) {
-					// Если цикл уже прошел, сбрасываем режим
-					if (state.lastLotusPickCycle >= cycle) {
+					// Защитный таймаут на сбор лотоса (не более 12 сек)
+					if (rawTime > state.lastModeSwitchTime + 12.0) {
+						this.Log("Таймаут сбора лотоса (>12с), возврат к фарму", hero)
+						state.lastLotusPickCycle = cycle
+						state.currentFarmMode = "none"
+						state.currentLotusSpot = null
+						state.lotusArrivalTime = 0
+					} else if (state.lastLotusPickCycle >= cycle) {
 						state.currentFarmMode = "none"
 						state.currentLotusSpot = null
 						state.lotusArrivalTime = 0
@@ -3788,7 +3803,8 @@ new (class JungleFarmScript {
 						const dist = hero.Distance2D(state.currentLotusSpot.pos)
 						state.targetPos = state.currentLotusSpot.pos
 
-						if (dist > 250) {
+						// Дистанция увеличена до 380 из-за физической коллизии пруда лотосов (иначе герой упирается и не доходит до 250)
+						if (dist > 380 && (hero.IsMoving || dist > 450)) {
 							this.setStatus(state, `Сбор лотоса: ${state.currentLotusSpot.name}`, hero)
 							state.lotusArrivalTime = 0
 							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
@@ -3801,11 +3817,21 @@ new (class JungleFarmScript {
 								state.lotusArrivalTime = rawTime
 							}
 
-							if (rawTime < state.lotusArrivalTime + 3.1) {
-								this.setStatus(state, `Ожидание лотоса (3 сек): ${Math.max(0, Math.ceil(3.1 - (rawTime - state.lotusArrivalTime)))}с`, hero)
+							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+								hero.MoveTo(state.currentLotusSpot.pos, false, true)
+								state.lastOrderTime = rawTime
+							}
+
+							if (hero.IsChanneling) {
+								this.setStatus(state, "Сбор лотоса (Ченнелинг)", hero)
+								return true
+							}
+
+							if (rawTime < state.lotusArrivalTime + 4.0) {
+								this.setStatus(state, `Ожидание лотоса: ${Math.max(0, Math.ceil(4.0 - (rawTime - state.lotusArrivalTime)))}с`, hero)
 								return true
 							} else {
-								this.Log(`Лотос собран в цикле ${cycle}`, hero)
+								this.Log(`Лотос проверен/собран в цикле ${cycle}`, hero)
 								state.lastLotusPickCycle = cycle
 								state.currentFarmMode = "none"
 								state.currentLotusSpot = null
@@ -3831,12 +3857,18 @@ new (class JungleFarmScript {
 			}
 
 			// Логика подбора бассейнов опыта каждые 7 минут (7, 14, 21...)
-			if (inGameTime > 420) {
+			if (this.pickWisdom.value && inGameTime > 420) {
 				const cycle = Math.floor(inGameTime / 420)
 
 				if (state.currentFarmMode === "wisdom" && state.currentWisdomSpot) {
-					// Если цикл уже прошел, сбрасываем режим
-					if (state.lastWisdomPickCycle >= cycle) {
+					// Защитный таймаут на сбор опыта (не более 15 сек)
+					if (rawTime > state.lastModeSwitchTime + 15.0) {
+						this.Log("Таймаут сбора опыта (>15с), возврат к фарму", hero)
+						state.lastWisdomPickCycle = cycle
+						state.currentFarmMode = "none"
+						state.currentWisdomSpot = null
+						state.wisdomArrivalTime = 0
+					} else if (state.lastWisdomPickCycle >= cycle) {
 						state.currentFarmMode = "none"
 						state.currentWisdomSpot = null
 						state.wisdomArrivalTime = 0
@@ -3844,7 +3876,8 @@ new (class JungleFarmScript {
 						const dist = hero.Distance2D(state.currentWisdomSpot.pos)
 						state.targetPos = state.currentWisdomSpot.pos
 
-						if (dist > 250) {
+						// Дистанция увеличена до 380 из-за коллизии объекта
+						if (dist > 380 && (hero.IsMoving || dist > 450)) {
 							this.setStatus(state, `Сбор опыта: ${state.currentWisdomSpot.name}`, hero)
 							state.wisdomArrivalTime = 0
 							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
@@ -3857,11 +3890,21 @@ new (class JungleFarmScript {
 								state.wisdomArrivalTime = rawTime
 							}
 
-							if (rawTime < state.wisdomArrivalTime + 4.1) {
-								this.setStatus(state, `Сбор опыта (4 сек): ${Math.max(0, Math.ceil(4.1 - (rawTime - state.wisdomArrivalTime)))}с`, hero)
+							if (!hero.IsMoving || rawTime > state.lastOrderTime + 1.5) {
+								hero.MoveTo(state.currentWisdomSpot.pos, false, true)
+								state.lastOrderTime = rawTime
+							}
+
+							if (hero.IsChanneling) {
+								this.setStatus(state, "Сбор опыта (Ченнелинг)", hero)
+								return true
+							}
+
+							if (rawTime < state.wisdomArrivalTime + 4.5) {
+								this.setStatus(state, `Сбор опыта: ${Math.max(0, Math.ceil(4.5 - (rawTime - state.wisdomArrivalTime)))}с`, hero)
 								return true
 							} else {
-								this.Log(`Опыт собран в цикле ${cycle}`, hero)
+								this.Log(`Опыт проверен/собран в цикле ${cycle}`, hero)
 								state.lastWisdomPickCycle = cycle
 								state.currentFarmMode = "none"
 								state.currentWisdomSpot = null
